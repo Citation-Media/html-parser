@@ -57,6 +57,10 @@ export const cleanHtml = (
   input: string | Response,
   options: CleanOptions
 ): Promise<string> => {
+  // An empty page has nothing to stream; some runtimes never finish transforming an empty body.
+  if (!(input instanceof Response) && input.trim() === "") {
+    return Promise.resolve("");
+  }
   const base = new URL(options.url);
   const removed = options.remove ?? {};
   let rewriter = new HTMLRewriter();

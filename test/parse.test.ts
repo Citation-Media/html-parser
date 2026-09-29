@@ -231,6 +231,28 @@ describe("context", () => {
     expect(headingCounts).toEqual([2, 300, 0, 0, 0, 0]);
   });
 
+  test("ends a context that shares its element with a link", async () => {
+    const { links } = await parseHtml(sections, {
+      context: "main a",
+      links: true,
+      url,
+    });
+    expect(links?.map(({ url: href }) => href)).toEqual([
+      "https://example.com/article1-link",
+      "https://example.com/article2-link",
+    ]);
+  });
+
+  test("returns empty results for an empty page", async () => {
+    expect(
+      await parseHtml("", { images: true, links: true, markdown: true, url })
+    ).toEqual({
+      images: [],
+      links: [],
+      markdown: "",
+    });
+  });
+
   test("falls back to the whole page when nothing matches", async () => {
     const { links } = await parseHtml(sections, {
       context: ".missing",

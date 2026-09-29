@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1 (2026-09-29)
+
+### Fixes
+
+- A context selector, a link, a heading, or a Markdown block that ended on the same element lost all but one of their end-tag actions, because HTMLRewriter keeps only the last end-tag handler per element. A context such as `main a` then collected everything after its first match, and headings collected together with Markdown lost their Markdown line break.
+- An empty page returns empty results at once instead of starting a transform that some runtimes never finish.
+
 ## 0.1.0 (2026-09-29)
 
 ### Features

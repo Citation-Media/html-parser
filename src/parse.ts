@@ -180,15 +180,26 @@ const maxHeadings = 200;
 const maxImages = 500;
 const maxResources = 500;
 
-// Follows an element to its end tag. Void elements such as <img> have none, and HTMLRewriter throws
-// for them; elements closed implicitly, such as <li> without </li>, end with their parent.
-const enter = (element: Element, onEnd: () => void) => {
+/**
+ * Follows an element to its end tag. HTMLRewriter keeps only the last end-tag handler an element
+ * gets, so every handler adds its action to the element's list and registers the whole list; the
+ * last registration then runs them all. Void elements such as <img> have no end tag, and
+ * HTMLRewriter throws for them; elements closed implicitly, such as <li> without </li>, end with
+ * their parent.
+ */
+const enter = (pass: Pass, element: Element, onEnd: () => void) => {
+  const actions = [...pass.endActions, onEnd];
   try {
-    element.onEndTag(onEnd);
-    return true;
+    element.onEndTag(() => {
+      for (const action of actions) {
+        action();
+      }
+    });
   } catch {
     return false;
   }
+  pass.endActions = actions;
+  return true;
 };
 
 const clean = (text: string) =>
@@ -245,6 +256,8 @@ interface Pass {
   contextFound: boolean;
   /** Open elements whose content stays out of the Markdown. */
   hidden: number;
+  /** End-tag actions of the element whose start tag the handlers are reading, see `enter`. */
+  endActions: (() => void)[];
   title: string[] | undefined;
   heading: { level: number; text: string[] } | undefined;
   link: string[] | undefined;
@@ -256,7 +269,7 @@ const writing = (pass: Pass) =>
 
 const hide = (pass: Pass) => ({
   element(element: Element) {
-    if (enter(element, () => (pass.hidden -= 1))) {
+    if (enter(pass, element, () => (pass.hidden -= 1))) {
       pass.hidden += 1;
     }
   },
@@ -269,7 +282,7 @@ const onStructure = (rewriter: HTMLRewriter, pass: Pass) => {
     next = next.on(context, {
       element(element) {
         pass.contextFound = true;
-        if (enter(element, () => (pass.inContext -= 1))) {
+        if (enter(pass, element, () => (pass.inContext -= 1))) {
           pass.inContext += 1;
         }
       },
@@ -299,7 +312,7 @@ const onStructure = (rewriter: HTMLRewriter, pass: Pass) => {
         return;
       }
       pass.markdown?.open(tag);
-      enter(element, () => {
+      enter(pass, element, () => {
         if (writing(pass)) {
           pass.markdown?.close(tag);
         }
@@ -329,7 +342,7 @@ const onLinks = (rewriter: HTMLRewriter, pass: Pass) =>
       if (written) {
         pass.markdown?.openLink(url);
       }
-      enter(element, () => {
+      enter(pass, element, () => {
         if (written) {
           pass.markdown?.closeLink();
         }
@@ -432,7 +445,7 @@ const onMeta = (rewriter: HTMLRewriter, pass: Pass) =>
     .on("title", {
       element(element) {
         pass.title = [];
-        enter(element, () => {
+        enter(pass, element, () => {
           pass.meta.title = clean((pass.title ?? []).join(""));
           pass.title = undefined;
         });
@@ -466,7 +479,7 @@ const onHeadings = (rewriter: HTMLRewriter, pass: Pass) =>
       const level = Number(element.tagName.slice(1));
       pass.headingCounts[level - 1] = (pass.headingCounts[level - 1] ?? 0) + 1;
       pass.heading = { level, text: [] };
-      enter(element, () => {
+      enter(pass, element, () => {
         const text = clean(pass.heading?.text.join("") ?? "");
         if (pass.heading && text && pass.headings.length < maxHeadings) {
           pass.headings.push({ level: pass.heading.level, text });
@@ -532,6 +545,7 @@ export const parseHtml = async (
       (options.classPrefixes ?? []).map((prefix) => [prefix, 0])
     ),
     contextFound: false,
+    endActions: [],
     heading: undefined,
     headingCounts: [0, 0, 0, 0, 0, 0],
     headings: [],
@@ -551,10 +565,17 @@ export const parseHtml = async (
     title: undefined,
   };
 
-  let rewriter = onImages(
-    onLinks(onStructure(new HTMLRewriter(), pass), pass),
-    pass
-  );
+  // An empty page has nothing to stream; some runtimes never finish transforming an empty body.
+  if (!(input instanceof Response) && input.trim() === "") {
+    return resultOf(pass);
+  }
+  // Registered first, so every element starts with an empty list of end-tag actions.
+  const first = new HTMLRewriter().on("*", {
+    element() {
+      pass.endActions = [];
+    },
+  });
+  let rewriter = onImages(onLinks(onStructure(first, pass), pass), pass);
   if (options.resources) {
     rewriter = onResources(rewriter, pass);
   }

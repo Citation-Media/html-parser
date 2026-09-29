@@ -80,3 +80,13 @@ test("stops at the maximum length", async () => {
   });
   expect(markdown?.length).toBeLessThanOrEqual(100);
 });
+
+test("writes headings when headings are collected in the same pass", async () => {
+  const { headings, markdown } = await parseHtml("<h1>Titel</h1><p>Text</p>", {
+    headings: true,
+    markdown: true,
+    url,
+  });
+  expect(headings).toEqual([{ level: 1, text: "Titel" }]);
+  expect(markdown).toBe("# Titel\n\nText");
+});
