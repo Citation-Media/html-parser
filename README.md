@@ -83,6 +83,8 @@ The streaming Markdown follows HTMLRewriter's model: tables become rows without 
 
 ## Develop
 
+Development needs Node.js 22.18 or later, which loads the TypeScript configuration of Oxlint and Oxfmt; `.nvmrc` pins Node.js 24.
+
 ```bash
 npm ci
 npm test
