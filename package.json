@@ -1,0 +1,59 @@
+{
+  "name": "@citation-media/html-parser",
+  "version": "0.1.0",
+  "description": "Streaming HTML parser for Cloudflare Workers: links, images, resources, and Markdown without a DOM, built on HTMLRewriter.",
+  "keywords": [
+    "cloudflare-workers",
+    "html",
+    "htmlrewriter",
+    "markdown",
+    "parser",
+    "scraping"
+  ],
+  "homepage": "https://github.com/Citation-Media/html-parser#readme",
+  "bugs": "https://github.com/Citation-Media/html-parser/issues",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Citation-Media/html-parser.git"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "ultracite check && tsc --noEmit",
+    "fix": "ultracite fix",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run build && npm run check && npm test",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.22.0",
+    "@cloudflare/workers-types": "5.20260929.1",
+    "oxfmt": "0.68.0",
+    "oxlint": "1.83.0",
+    "typescript": "6.0.3",
+    "ultracite": "7.12.0",
+    "vitest": "4.1.11"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

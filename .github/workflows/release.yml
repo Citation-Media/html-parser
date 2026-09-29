@@ -1,0 +1,84 @@
+name: release
+
+# A pushed v* tag publishes the version in package.json to npm and creates the GitHub release.
+# Bump the version and CHANGELOG.md in a commit on main first; the tag must match that version.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  # Publishes through npm trusted publishing: the job proves its identity with a short-lived OIDC
+  # token instead of a long-lived NPM_TOKEN, and npm attaches provenance on its own.
+  #
+  # Set this up once at npmjs.com on the package, under Trusted Publishers:
+  # organization Citation-Media, repository html-parser, workflow release.yml.
+  npm:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      # Required for trusted publishing.
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          # Trusted publishing needs npm 11.5.1+, which ships with Node 24.
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - name: Check that the tag matches package.json
+        id: version
+        run: |
+          set -eu
+          VERSION="${GITHUB_REF_NAME#v}"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $PACKAGE_VERSION" >&2
+            exit 1
+          fi
+          # A prerelease such as 0.2.0-rc.1 must not move the latest dist-tag.
+          case "$VERSION" in
+            *-*) echo "DIST_TAG=next" >> "$GITHUB_OUTPUT" ;;
+            *) echo "DIST_TAG=latest" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Install
+        run: npm ci
+
+      # prepublishOnly builds, checks, and tests before anything is uploaded. A version that is
+      # already on npm, such as the first one, which npm requires to be published by hand before
+      # trusted publishing can be set up, is skipped, so the GitHub release still follows.
+      - name: Publish to npm
+        run: |
+          set -eu
+          if npm view "@citation-media/html-parser@${GITHUB_REF_NAME#v}" version >/dev/null 2>&1; then
+            echo "${GITHUB_REF_NAME#v} is already on npm; skipping publish."
+          else
+            npm publish --access public --tag "${{ steps.version.outputs.DIST_TAG }}"
+          fi
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          VERSION="${GITHUB_REF_NAME#v}"
+          # The CHANGELOG.md section of this version becomes the release notes.
+          awk -v version="$VERSION" '
+            $0 ~ "^## " { if (found) exit; found = index($0, version) > 0; next }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          PRERELEASE=""
+          case "$VERSION" in *-*) PRERELEASE="--prerelease" ;; esac
+          if [ -s release-notes.md ]; then
+            gh release create "$GITHUB_REF_NAME" --notes-file release-notes.md $PRERELEASE
+          else
+            gh release create "$GITHUB_REF_NAME" --generate-notes $PRERELEASE
+          fi
