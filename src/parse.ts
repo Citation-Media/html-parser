@@ -2,6 +2,7 @@ import { MarkdownWriter } from "./markdown.ts";
 import {
   collapseWhitespace,
   decodeEntities,
+  readAttribute,
   removeHyphenation,
 } from "./text.ts";
 import { absoluteUrl, isResource, linkKind } from "./urls.ts";
@@ -177,7 +178,6 @@ const hiddenFromMarkdown = [
 ];
 
 const maxHeadings = 200;
-const maxImages = 500;
 const maxResources = 500;
 
 /**
@@ -301,7 +301,7 @@ const onStructure = (rewriter: HTMLRewriter, pass: Pass) => {
       if (!collecting(pass)) {
         return;
       }
-      const classes = element.getAttribute("class")?.split(/\s+/u) ?? [];
+      const classes = readAttribute(element, "class")?.split(/\s+/u) ?? [];
       for (const prefix of classPrefixes) {
         if (classes.some((name) => name.startsWith(prefix))) {
           pass.classCounts[prefix] = (pass.classCounts[prefix] ?? 0) + 1;
@@ -324,7 +324,7 @@ const onStructure = (rewriter: HTMLRewriter, pass: Pass) => {
 const onLinks = (rewriter: HTMLRewriter, pass: Pass) =>
   rewriter.on("a[href]", {
     element(element) {
-      const href = element.getAttribute("href") ?? "";
+      const href = readAttribute(element, "href") ?? "";
       if (!collecting(pass) || !href) {
         return;
       }
@@ -332,9 +332,9 @@ const onLinks = (rewriter: HTMLRewriter, pass: Pass) =>
       const text: string[] = [];
       pass.link = text;
       // Attributes are readable only while this handler runs, not in the end-tag handler.
-      const label = element.getAttribute("aria-label") ?? undefined;
-      const rel = element.getAttribute("rel") ?? undefined;
-      const target = element.getAttribute("target") ?? undefined;
+      const label = readAttribute(element, "aria-label") ?? undefined;
+      const rel = readAttribute(element, "rel") ?? undefined;
+      const target = readAttribute(element, "target") ?? undefined;
       const written =
         writing(pass) &&
         pass.markdownOptions?.links !== false &&
@@ -361,26 +361,25 @@ const onLinks = (rewriter: HTMLRewriter, pass: Pass) =>
 const onImages = (rewriter: HTMLRewriter, pass: Pass) =>
   rewriter.on("img", {
     element(element) {
-      // Lazy-loading scripts often keep the real address in data-src until the image scrolls in.
-      const src =
-        element.getAttribute("src") ?? element.getAttribute("data-src");
-      if (!collecting(pass) || !src || src.startsWith("data:")) {
+      // Lazy-loading scripts keep the real address in data-src and a placeholder in src.
+      const src = [
+        readAttribute(element, "src"),
+        readAttribute(element, "data-src"),
+        readAttribute(element, "data-lazy-src"),
+      ].find((value) => value && !value.startsWith("data:"));
+      if (!collecting(pass) || !src) {
         return;
       }
       const url = absoluteUrl(src, pass.base);
-      const alt = element.getAttribute("alt");
-      if (
-        pass.options.images &&
-        pass.images.size < maxImages &&
-        !pass.images.has(url)
-      ) {
+      const alt = readAttribute(element, "alt");
+      if (pass.options.images && !pass.images.has(url)) {
         pass.images.set(url, {
           alt: alt === null ? null : clean(alt),
-          height: element.getAttribute("height") ?? undefined,
-          loading: element.getAttribute("loading") ?? undefined,
+          height: readAttribute(element, "height") ?? undefined,
+          loading: readAttribute(element, "loading") ?? undefined,
           srcset: element.hasAttribute("srcset"),
           url,
-          width: element.getAttribute("width") ?? undefined,
+          width: readAttribute(element, "width") ?? undefined,
         });
       }
       if (writing(pass) && pass.markdownOptions?.images) {
@@ -395,13 +394,13 @@ const onResources = (rewriter: HTMLRewriter, pass: Pass) => {
     .on("script", {
       element(element) {
         if (resources.scripts.length < maxResources) {
-          const src = element.getAttribute("src");
+          const src = readAttribute(element, "src");
           resources.scripts.push({
             attributes: [...element.attributes].flatMap(([name]) =>
               name ? [name] : []
             ),
             src: src ? absoluteUrl(src, base) : undefined,
-            type: element.getAttribute("type") ?? undefined,
+            type: readAttribute(element, "type") ?? undefined,
           });
         }
       },
@@ -410,7 +409,7 @@ const onResources = (rewriter: HTMLRewriter, pass: Pass) => {
       element(element) {
         if (resources.frames.length < maxResources) {
           resources.frames.push(
-            absoluteUrl(element.getAttribute("src") ?? "", base)
+            absoluteUrl(readAttribute(element, "src") ?? "", base)
           );
         }
       },
@@ -419,8 +418,8 @@ const onResources = (rewriter: HTMLRewriter, pass: Pass) => {
       element(element) {
         if (resources.links.length < maxResources) {
           resources.links.push({
-            href: absoluteUrl(element.getAttribute("href") ?? "", base),
-            rel: element.getAttribute("rel") ?? "",
+            href: absoluteUrl(readAttribute(element, "href") ?? "", base),
+            rel: readAttribute(element, "rel") ?? "",
           });
         }
       },
@@ -439,7 +438,7 @@ const onMeta = (rewriter: HTMLRewriter, pass: Pass) =>
   rewriter
     .on("html", {
       element(element) {
-        pass.meta.language = element.getAttribute("lang") ?? undefined;
+        pass.meta.language = readAttribute(element, "lang") ?? undefined;
       },
     })
     .on("title", {
@@ -454,18 +453,18 @@ const onMeta = (rewriter: HTMLRewriter, pass: Pass) =>
     .on("meta", {
       element(element) {
         const name =
-          element.getAttribute("name") ??
-          element.getAttribute("property") ??
+          readAttribute(element, "name") ??
+          readAttribute(element, "property") ??
           "";
         const field = metaFields.get(name.toLowerCase());
         if (field) {
-          pass.meta[field] = element.getAttribute("content") ?? undefined;
+          pass.meta[field] = readAttribute(element, "content") ?? undefined;
         }
       },
     })
     .on("link[rel='canonical']", {
       element(element) {
-        const href = element.getAttribute("href");
+        const href = readAttribute(element, "href");
         pass.meta.canonical = href ? absoluteUrl(href, pass.base) : undefined;
       },
     });

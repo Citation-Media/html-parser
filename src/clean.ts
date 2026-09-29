@@ -1,5 +1,5 @@
 import type { LinkFilter } from "./parse.ts";
-import { looksBinary } from "./text.ts";
+import { looksBinary, readAttribute } from "./text.ts";
 import { absoluteUrl, isResource, linkKind } from "./urls.ts";
 
 /**
@@ -173,7 +173,7 @@ export const cleanHtml = (
   if (links) {
     rewriter = rewriter.on("a", {
       element(element) {
-        const href = element.getAttribute("href");
+        const href = readAttribute(element, "href");
         if (!href) {
           return;
         }

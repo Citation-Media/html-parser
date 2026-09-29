@@ -143,6 +143,33 @@ describe("images", () => {
   });
 });
 
+describe("attributes", () => {
+  test("decodes entities in URLs and texts, as a DOM parser would", async () => {
+    const { images, links } = await parseHtml(
+      '<a href="/s?a=1&amp;b=2" aria-label="Caf&eacute; &amp; Bar">x</a><a href="mailto:&#x69;&#x6e;&#x66;&#x6f;@example.com">Mail</a><img src="/i.png?w=1&amp;h=2" alt="Tom &amp; Jerry">',
+      { images: true, links: true, url }
+    );
+    expect(links?.map(({ url: href }) => href)).toEqual([
+      "https://example.com/s?a=1&b=2",
+      "mailto:info@example.com",
+    ]);
+    expect(images?.[0]).toMatchObject({
+      alt: "Tom & Jerry",
+      url: "https://example.com/i.png?w=1&h=2",
+    });
+  });
+
+  test("takes lazy-loaded images from data-src and keeps every image", async () => {
+    const html = `<img src="data:image/svg+xml,%3Csvg%3E" data-src="/real.jpg" alt="Real">${Array.from({ length: 600 }, (_, index) => `<img src="/i${index}.png">`).join("")}`;
+    const { images } = await parseHtml(html, { images: true, url });
+    expect(images?.[0]).toMatchObject({
+      alt: "Real",
+      url: "https://example.com/real.jpg",
+    });
+    expect(images).toHaveLength(601);
+  });
+});
+
 describe("resources and meta", () => {
   test("lists scripts with their attributes, frames, and link elements", async () => {
     const { resources } = await parseHtml(sample, { resources: true, url });

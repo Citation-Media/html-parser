@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.2 (2026-09-29)
+
+### Fixes
+
+- Attribute values have their entities decoded, as a DOM parser would: `href="?a=1&amp;b=2"` becomes `?a=1&b=2`, and addresses obfuscated with numeric entities become readable. HTMLRewriter returns attributes as written in the source.
+- Text and attributes decode every named entity of HTML 4, not only the most common ones.
+- Lazy-loaded images are taken from `data-src` or `data-lazy-src` when `src` holds only a `data:` placeholder.
+- `images` lists every image of the page; the limit of 500 is gone.
+
 ## 0.1.1 (2026-09-29)
 
 ### Fixes
