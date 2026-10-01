@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.0 (2026-10-01)
+
+### Breaking changes
+
+HTML-to-Markdown conversion is removed; this library now only extracts facts from HTML and cleans it. Use [mdream](https://github.com/harlan-zw/mdream) for Markdown: it converts tables, nested lists, and the languages of code blocks correctly, which the streaming writer did not.
+
+- `parseHtml` no longer takes the `markdown` option and no longer returns `markdown`. Convert the page with `import { htmlToMarkdown } from "@mdream/js"`, or with `mdream` for the Rust/WASM engine. To limit the Markdown to the content, pass it the output of `cleanHtml` with `context`.
+- `parseHtml` no longer takes `skipAriaHidden`, which affected only the Markdown. Remove it from the options; links, images, and headings inside `aria-hidden` elements were and still are collected.
+- `markdownWithAi` and its types `AiMarkdownOptions` and `MarkdownConverter` are removed. Call Workers AI directly with the output of `cleanHtml`: `env.AI.toMarkdown([{ name: "index.html", blob: new Blob([html], { type: "text/html" }) }])`. For the same input as before, clean with `remove` set to `scripts`, `styles`, `comments`, `cookieConsent`, `ariaHidden`, `classes`, `ids`, `meta`, `linkTags`, `hyphenation`, and, unless you want images, `images`.
+- The type `MarkdownOptions` is removed.
+
+### Changes
+
+- `parseHtml` registers the handlers for links, images, and class counts only when they are asked for.
+
 ## 0.1.2 (2026-09-29)
 
 ### Fixes

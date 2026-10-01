@@ -270,13 +270,39 @@ describe("context", () => {
     ]);
   });
 
+  test("ends a context that shares its element with a heading", async () => {
+    const { headings, headingCounts } = await parseHtml(
+      "<h2>Before</h2><article><h2>Inside</h2><p>Text</p></article><h2>After</h2>",
+      { context: "article h2", headings: true, url }
+    );
+    expect(headings).toEqual([{ level: 2, text: "Inside" }]);
+    expect(headingCounts).toEqual([0, 1, 0, 0, 0, 0]);
+  });
+
+  test("collects from navigation, footers, and hidden elements alike", async () => {
+    const { headings, links } = await parseHtml(
+      `<nav><a href="/start">Start</a></nav>
+       <div aria-hidden="true"><h1>Barriere&shy;freiheit</h1></div>
+       <div role="dialog"><a href="/datenschutz">Datenschutz</a></div>
+       <footer><a href="/impressum">Impressum</a></footer>`,
+      { headings: true, links: true, url }
+    );
+    expect(links?.map(({ text }) => text)).toEqual([
+      "Start",
+      "Datenschutz",
+      "Impressum",
+    ]);
+    expect(headings).toEqual([{ level: 1, text: "Barrierefreiheit" }]);
+  });
+
   test("returns empty results for an empty page", async () => {
     expect(
-      await parseHtml("", { images: true, links: true, markdown: true, url })
+      await parseHtml("", { headings: true, images: true, links: true, url })
     ).toEqual({
+      headingCounts: [0, 0, 0, 0, 0, 0],
+      headings: [],
       images: [],
       links: [],
-      markdown: "",
     });
   });
 
