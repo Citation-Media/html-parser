@@ -7,13 +7,13 @@ citation:
 
 # Agent Instructions
 
-This repository maintains `@citation-media/html-parser`, a library that extracts links, images, resources, metadata, and Markdown from HTML in one HTMLRewriter pass, without a DOM, for Cloudflare Workers. Everything it needs is in this repository; keep it that way, since the repository and the npm package are public.
+This repository maintains `@citation-media/html-parser`, a library that extracts links, images, resources, metadata, headings, and class counts from HTML in one HTMLRewriter pass, without a DOM, for Cloudflare Workers, and cleans HTML. Converting HTML to Markdown is out of scope; consumers use mdream for it. Everything it needs is in this repository; keep it that way, since the repository and the npm package are public.
 
 ## Runtime
 
 - The package runs where `HTMLRewriter` is a global: Cloudflare Workers and their local runtime. Tests run inside workerd through `@cloudflare/vitest-pool-workers`, not in Node.
 - HTMLRewriter elements are not DOM nodes: attributes are readable only inside the element handler, void elements throw on `onEndTag`, and text arrives in chunks with entities still encoded.
-- Keep the public API stable: link kinds, counts, and filters; images with missing (`null`) versus empty (`""`) alt texts; the cleaning options. A breaking change needs a major version.
+- Keep the public API stable: link kinds, counts, and filters; images with missing (`null`) versus empty (`""`) alt texts; the cleaning options. A breaking change needs a major version, or a minor version before 1.0.
 
 ## Checks
 

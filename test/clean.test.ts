@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { cleanHtml, markdownWithAi } from "../src/index.ts";
+import { cleanHtml } from "../src/index.ts";
 
 const url = "https://example.com/";
 
@@ -65,20 +65,4 @@ test("unwraps links that the filter does not keep and limits to a context", asyn
     { context: "main", links: { kinds: ["internal"] }, url }
   );
   expect(cleaned).toBe('<main><a href="/in">In</a> Out</main>');
-});
-
-test("converts cleaned HTML with Workers AI when asked", async () => {
-  let received = "";
-  const markdown = await markdownWithAi(
-    {
-      toMarkdown: async ([file]) => {
-        received = (await file?.blob.text()) ?? "";
-        return [{ data: "# Title", format: "markdown" }];
-      },
-    },
-    '<h1 class="x">Title</h1><script>x</script><img src="/a.png">',
-    { url }
-  );
-  expect(markdown).toBe("# Title");
-  expect(received).toBe("<h1>Title</h1>");
 });

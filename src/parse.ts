@@ -1,4 +1,3 @@
-import { MarkdownWriter } from "./markdown.ts";
 import {
   collapseWhitespace,
   decodeEntities,
@@ -10,8 +9,8 @@ import type { LinkKind } from "./urls.ts";
 
 /**
  * One streaming pass over a page with Cloudflare's HTMLRewriter, which never builds a DOM: it
- * collects links, images, resources, metadata, headings, and class counts, and writes Markdown at
- * the same time. Memory stays flat even for pages of several megabytes.
+ * collects links, images, resources, metadata, headings, and class counts. Memory stays flat even
+ * for pages of several megabytes.
  */
 
 export interface Link {
@@ -76,15 +75,6 @@ export interface LinkFilter {
   resources?: boolean;
 }
 
-export interface MarkdownOptions {
-  /** Writes `[text](url)` for links. Default true. */
-  links?: boolean;
-  /** Writes `![alt](url)` for images. Default false. */
-  images?: boolean;
-  /** Longest output in characters. Default 100 000. */
-  maxLength?: number;
-}
-
 export interface ParseOptions {
   /** The page's address, to resolve relative URLs and tell internal links from external ones. */
   url: string | URL;
@@ -95,17 +85,11 @@ export interface ParseOptions {
   headings?: boolean;
   /** Counts elements whose class starts with a prefix, such as page builders' `elementor-`. */
   classPrefixes?: string[];
-  markdown?: boolean | MarkdownOptions;
   /**
    * Collects only inside elements matching this selector, such as `main` or `article`. When
    * nothing matches, the whole page counts; for a `Response` input, nothing is collected then.
    */
   context?: string;
-  /**
-   * Leaves `aria-hidden` content out of the Markdown. Default true. Set it to false for DOMs taken
-   * from a browser while a dialog is open: consent tools hide the whole page behind it that way.
-   */
-  skipAriaHidden?: boolean;
 }
 
 export interface ParseResult {
@@ -118,64 +102,7 @@ export interface ParseResult {
   /** How many headings of each level the page has, uncapped: `headingCounts[0]` counts `h1`. */
   headingCounts?: number[];
   classCounts?: Record<string, number>;
-  markdown?: string;
 }
-
-const blockTags = new Set([
-  "br",
-  "hr",
-  "h1",
-  "h2",
-  "h3",
-  "h4",
-  "h5",
-  "h6",
-  "p",
-  "li",
-  "ul",
-  "ol",
-  "blockquote",
-  "pre",
-  "tr",
-  "td",
-  "th",
-  "dt",
-  "dd",
-  "figcaption",
-  "section",
-  "article",
-  "div",
-]);
-
-// Content that is not what a reader reads: page chrome, code, and consent dialogs.
-const hiddenFromMarkdown = [
-  "script",
-  "style",
-  "noscript",
-  "template",
-  "svg",
-  "iframe",
-  "nav",
-  "footer",
-  "form",
-  "select",
-  "[hidden]",
-  "[role='dialog']",
-  "[aria-modal='true']",
-  "[id*='cookie']",
-  "[class*='cookie']",
-  "[id*='consent']",
-  "[class*='consent']",
-  "[id^='brlbs-cmpnt']",
-  "[class^='brlbs-cmpnt']",
-  "#BorlabsCookieBox",
-  "#usercentrics-root",
-  "#CybotCookiebotDialog",
-  "#cc-main",
-  ".screen-reader-text",
-  ".sr-only",
-  ".visually-hidden",
-];
 
 const maxHeadings = 200;
 const maxResources = 500;
@@ -242,8 +169,6 @@ interface Pass {
   options: ParseOptions;
   base: URL;
   linkFilter: LinkFilter | undefined;
-  markdownOptions: MarkdownOptions | undefined;
-  markdown: MarkdownWriter | undefined;
   links: Map<string, Link>;
   images: Map<string, Image>;
   resources: Resources;
@@ -254,8 +179,6 @@ interface Pass {
   /** Open context elements; without a context selector the whole page counts. */
   inContext: number;
   contextFound: boolean;
-  /** Open elements whose content stays out of the Markdown. */
-  hidden: number;
   /** End-tag actions of the element whose start tag the handlers are reading, see `enter`. */
   endActions: (() => void)[];
   title: string[] | undefined;
@@ -264,16 +187,6 @@ interface Pass {
 }
 
 const collecting = (pass: Pass) => pass.inContext > 0;
-const writing = (pass: Pass) =>
-  collecting(pass) && pass.hidden === 0 && pass.markdown !== undefined;
-
-const hide = (pass: Pass) => ({
-  element(element: Element) {
-    if (enter(pass, element, () => (pass.hidden -= 1))) {
-      pass.hidden += 1;
-    }
-  },
-});
 
 const onStructure = (rewriter: HTMLRewriter, pass: Pass) => {
   const { context, classPrefixes = [] } = pass.options;
@@ -288,16 +201,11 @@ const onStructure = (rewriter: HTMLRewriter, pass: Pass) => {
       },
     });
   }
-  next = next.on(hiddenFromMarkdown.join(", "), hide(pass));
-  if (pass.options.skipAriaHidden ?? true) {
-    next = next.on("[aria-hidden='true']", hide(pass));
+  if (classPrefixes.length === 0) {
+    return next;
   }
   return next.on("*", {
     element(element) {
-      // Namespaced tags such as <x:xmpmeta> carry image metadata, not content.
-      if (element.tagName.includes(":")) {
-        hide(pass).element(element);
-      }
       if (!collecting(pass)) {
         return;
       }
@@ -307,16 +215,6 @@ const onStructure = (rewriter: HTMLRewriter, pass: Pass) => {
           pass.classCounts[prefix] = (pass.classCounts[prefix] ?? 0) + 1;
         }
       }
-      const tag = element.tagName.toLowerCase();
-      if (!writing(pass) || !blockTags.has(tag)) {
-        return;
-      }
-      pass.markdown?.open(tag);
-      enter(pass, element, () => {
-        if (writing(pass)) {
-          pass.markdown?.close(tag);
-        }
-      });
     },
   });
 };
@@ -335,24 +233,12 @@ const onLinks = (rewriter: HTMLRewriter, pass: Pass) =>
       const label = readAttribute(element, "aria-label") ?? undefined;
       const rel = readAttribute(element, "rel") ?? undefined;
       const target = readAttribute(element, "target") ?? undefined;
-      const written =
-        writing(pass) &&
-        pass.markdownOptions?.links !== false &&
-        !href.startsWith("#");
-      if (written) {
-        pass.markdown?.openLink(url);
-      }
       enter(pass, element, () => {
-        if (written) {
-          pass.markdown?.closeLink();
-        }
-        if (pass.linkFilter) {
-          addLink(
-            pass.links,
-            { href, label, rel, target, text: clean(text.join("")), url },
-            pass.base
-          );
-        }
+        addLink(
+          pass.links,
+          { href, label, rel, target, text: clean(text.join("")), url },
+          pass.base
+        );
         pass.link = undefined;
       });
     },
@@ -371,8 +257,8 @@ const onImages = (rewriter: HTMLRewriter, pass: Pass) =>
         return;
       }
       const url = absoluteUrl(src, pass.base);
-      const alt = readAttribute(element, "alt");
-      if (pass.options.images && !pass.images.has(url)) {
+      if (!pass.images.has(url)) {
+        const alt = readAttribute(element, "alt");
         pass.images.set(url, {
           alt: alt === null ? null : clean(alt),
           height: readAttribute(element, "height") ?? undefined,
@@ -381,9 +267,6 @@ const onImages = (rewriter: HTMLRewriter, pass: Pass) =>
           url,
           width: readAttribute(element, "width") ?? undefined,
         });
-      }
-      if (writing(pass) && pass.markdownOptions?.images) {
-        pass.markdown?.image(alt ?? "", url);
       }
     },
   });
@@ -497,9 +380,6 @@ const onText = (rewriter: HTMLRewriter, pass: Pass) =>
       }
       pass.link?.push(chunk.text);
       pass.heading?.text.push(chunk.text);
-      if (writing(pass)) {
-        pass.markdown?.text(chunk.text);
-      }
     },
   });
 
@@ -525,9 +405,6 @@ const resultOf = (pass: Pass): ParseResult => {
   if (options.classPrefixes) {
     result.classCounts = pass.classCounts;
   }
-  if (pass.markdown) {
-    result.markdown = pass.markdown.toString();
-  }
   return result;
 };
 
@@ -536,8 +413,6 @@ export const parseHtml = async (
   input: string | Response,
   options: ParseOptions
 ): Promise<ParseResult> => {
-  const markdownOptions: MarkdownOptions | undefined =
-    options.markdown === true ? {} : options.markdown || undefined;
   const pass: Pass = {
     base: new URL(options.url),
     classCounts: Object.fromEntries(
@@ -548,16 +423,11 @@ export const parseHtml = async (
     heading: undefined,
     headingCounts: [0, 0, 0, 0, 0, 0],
     headings: [],
-    hidden: 0,
     images: new Map(),
     inContext: options.context ? 0 : 1,
     link: undefined,
     linkFilter: options.links === true ? {} : options.links || undefined,
     links: new Map(),
-    markdown: markdownOptions
-      ? new MarkdownWriter(markdownOptions.maxLength ?? 100_000)
-      : undefined,
-    markdownOptions,
     meta: {},
     options,
     resources: { frames: [], links: [], scripts: [] },
@@ -574,7 +444,13 @@ export const parseHtml = async (
       pass.endActions = [];
     },
   });
-  let rewriter = onImages(onLinks(onStructure(first, pass), pass), pass);
+  let rewriter = onStructure(first, pass);
+  if (pass.linkFilter) {
+    rewriter = onLinks(rewriter, pass);
+  }
+  if (options.images) {
+    rewriter = onImages(rewriter, pass);
+  }
   if (options.resources) {
     rewriter = onResources(rewriter, pass);
   }

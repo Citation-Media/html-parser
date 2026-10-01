@@ -4,8 +4,8 @@ import { absoluteUrl, isResource, linkKind } from "./urls.ts";
 
 /**
  * Cleans a page in one streaming pass, for callers that need HTML rather than extracted facts,
- * such as a Markdown conversion by Workers AI. EXIF and XMP blobs and binary-looking text are
- * always removed; everything else is removed only when asked.
+ * such as a scraper that stores the page or hands it to a converter. EXIF and XMP blobs and
+ * binary-looking text are always removed; everything else is removed only when asked.
  */
 
 export interface CleanOptions {

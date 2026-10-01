@@ -1,6 +1,6 @@
 # @citation-media/html-parser
 
-Extracts links, images, resources, metadata, and Markdown from HTML in Cloudflare Workers, in one streaming pass over the page. It builds on the runtime's [HTMLRewriter](https://developers.cloudflare.com/workers/runtime-apis/html-rewriter/), so it never holds a DOM: a page of several megabytes costs about as much memory as a small one.
+Extracts links, images, resources, metadata, headings, and class counts from HTML in Cloudflare Workers, in one streaming pass over the page, and cleans HTML for callers that need the page itself. It builds on the runtime's [HTMLRewriter](https://developers.cloudflare.com/workers/runtime-apis/html-rewriter/), so it never holds a DOM: a page of several megabytes costs about as much memory as a small one.
 
 ## Install
 
@@ -18,12 +18,11 @@ The package runs wherever `HTMLRewriter` is a global: Cloudflare Workers, `wrang
 import { parseHtml } from "@citation-media/html-parser";
 
 const response = await fetch("https://example.com/");
-const { links, images, meta, markdown } = await parseHtml(response, {
+const { links, images, meta } = await parseHtml(response, {
   url: response.url,
   links: { kinds: ["internal"], resources: false },
   images: true,
   meta: true,
-  markdown: true,
 });
 ```
 
@@ -36,13 +35,9 @@ const { links, images, meta, markdown } = await parseHtml(response, {
 | `meta` | Title, description, language, canonical URL, robots, viewport, generator, and Open Graph image. |
 | `headings` | The first 200 headings with their level and text, and `headingCounts` per level without a limit. |
 | `classPrefixes` | Counts of elements whose class starts with a prefix, such as `["elementor-", "brxe-", "wp-block-"]`. |
-| `markdown` | `true` or options: `links` (default true), `images` (default false), `maxLength` (default 100 000). |
 | `context` | A CSS selector such as `main` or `article`: only content inside matching elements counts. When nothing matches, the whole page counts, if the input is text. |
-| `skipAriaHidden` | Leaves `aria-hidden` content out of the Markdown. Default true; set it to false for DOMs taken from a browser while a consent dialog is open, which hides the page that way. |
 
 Links are deduplicated by URL, counted, and sorted by count. Each carries its `text`, `kind`, `resource`, `count`, and, where present, `rel`, `target`, and `aria-label`. URLs are absolute; paths keep their case.
-
-The Markdown leaves out navigation, footer, forms, scripts, consent dialogs, visually hidden helpers, and binary or EXIF text, so it holds what a reader reads.
 
 ## Clean A Page
 
@@ -67,19 +62,13 @@ const html = await cleanHtml(page, {
 
 `remove` accepts `scripts`, `styles` (with style attributes and inline SVG), `comments`, `cookieConsent`, `ariaHidden`, `images`, `classes`, `ids`, `meta`, `linkTags`, and `hyphenation`. Links that `links` does not keep become their text.
 
-## Markdown By Workers AI
+## Markdown
 
-`markdownWithAi` cleans the page and converts it with Workers AI's document conversion. It handles tables and nested formatting better than the streaming Markdown, at the cost of a service call.
-
-```ts
-import { markdownWithAi } from "@citation-media/html-parser";
-
-const markdown = await markdownWithAi(env.AI, page, { url, images: true });
-```
+Converting HTML to Markdown is out of scope; use [mdream](https://github.com/harlan-zw/mdream): `@mdream/js` is pure JavaScript, and `mdream` uses WebAssembly in Workers. To convert only the content you keep, pass it the output of `cleanHtml`.
 
 ## Limits
 
-The streaming Markdown follows HTMLRewriter's model: tables become rows without alignment, and bold or italic formatting is dropped. Use `markdownWithAi` where that matters. Elements that are opened but never closed, such as `<span/>`, keep their state to the end of the page.
+Elements that are opened but never closed, such as `<span/>`, keep their state to the end of the page: a context, link, or heading that starts on one collects until the page ends.
 
 ## Develop
 
