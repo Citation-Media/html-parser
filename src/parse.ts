@@ -1,4 +1,10 @@
 import {
+  maxBlockLength,
+  maxBlocks,
+  readStructuredData,
+} from "./structured-data.ts";
+import type { StructuredData } from "./structured-data.ts";
+import {
   collapseWhitespace,
   decodeEntities,
   readAttribute,
@@ -9,7 +15,7 @@ import type { LinkKind } from "./urls.ts";
 
 /**
  * One streaming pass over a page with Cloudflare's HTMLRewriter, which never builds a DOM: it
- * collects links, images, resources, metadata, headings, and class counts. Memory stays flat even
+ * collects links, images, resources, metadata, headings, class counts, and JSON-LD. Memory stays flat even
  * for pages of several megabytes.
  */
 
@@ -90,6 +96,8 @@ export interface ParseOptions {
    * nothing matches, the whole page counts; for a `Response` input, nothing is collected then.
    */
   context?: string;
+  /** Reads the page's JSON-LD blocks, wherever they are, as `structuredData`. */
+  structuredData?: boolean;
 }
 
 export interface ParseResult {
@@ -102,6 +110,7 @@ export interface ParseResult {
   /** How many headings of each level the page has, uncapped: `headingCounts[0]` counts `h1`. */
   headingCounts?: number[];
   classCounts?: Record<string, number>;
+  structuredData?: StructuredData;
 }
 
 const maxHeadings = 200;
@@ -184,6 +193,8 @@ interface Pass {
   title: string[] | undefined;
   heading: { level: number; text: string[] } | undefined;
   link: string[] | undefined;
+  /** Text of the JSON-LD blocks read so far; the open block is the last. */
+  jsonLd: string[];
 }
 
 const collecting = (pass: Pass) => pass.inContext > 0;
@@ -371,6 +382,34 @@ const onHeadings = (rewriter: HTMLRewriter, pass: Pass) =>
     },
   });
 
+// The type may carry parameters, such as `application/ld+json; charset=utf-8`.
+const jsonLdType = /^\s*application\/ld\+json\s*(?:;|$)/iu;
+
+const onStructuredData = (rewriter: HTMLRewriter, pass: Pass) => {
+  // Whether the script being read is a JSON-LD block; its text arrives in chunks.
+  let reading = false;
+  return rewriter.on("script[type]", {
+    element(element) {
+      reading =
+        jsonLdType.test(readAttribute(element, "type") ?? "") &&
+        pass.jsonLd.length < maxBlocks;
+      if (reading) {
+        pass.jsonLd.push("");
+      }
+    },
+    text(chunk) {
+      const last = pass.jsonLd.length - 1;
+      const block = pass.jsonLd[last];
+      if (reading && block !== undefined && block.length < maxBlockLength) {
+        pass.jsonLd[last] = block + chunk.text;
+      }
+      if (chunk.lastInTextNode) {
+        reading = false;
+      }
+    },
+  });
+};
+
 const onText = (rewriter: HTMLRewriter, pass: Pass) =>
   rewriter.onDocument({
     text(chunk) {
@@ -405,6 +444,9 @@ const resultOf = (pass: Pass): ParseResult => {
   if (options.classPrefixes) {
     result.classCounts = pass.classCounts;
   }
+  if (options.structuredData) {
+    result.structuredData = readStructuredData(pass.jsonLd);
+  }
   return result;
 };
 
@@ -425,6 +467,7 @@ export const parseHtml = async (
     headings: [],
     images: new Map(),
     inContext: options.context ? 0 : 1,
+    jsonLd: [],
     link: undefined,
     linkFilter: options.links === true ? {} : options.links || undefined,
     links: new Map(),
@@ -459,6 +502,9 @@ export const parseHtml = async (
   }
   if (options.headings) {
     rewriter = onHeadings(rewriter, pass);
+  }
+  if (options.structuredData) {
+    rewriter = onStructuredData(rewriter, pass);
   }
   const response =
     input instanceof Response

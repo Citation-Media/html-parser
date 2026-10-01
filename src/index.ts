@@ -12,6 +12,12 @@ export type {
   Resources,
   Script,
 } from "./parse.ts";
+export { readStructuredData } from "./structured-data.ts";
+export type {
+  JsonObject,
+  JsonValue,
+  StructuredData,
+} from "./structured-data.ts";
 export {
   absoluteUrl,
   isResource,
