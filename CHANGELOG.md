@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0 (2026-10-01)
+
+### Features
+
+- The Markdown keeps inline formatting: `<strong>` and `<b>` become `**bold**`, `<em>` and `<i>` become `*italic*`, and `<code>` outside a code block becomes inline code, with a longer backtick fence when the code holds backticks. Formatting around only whitespace is left out, spaces at its edges stay outside the markers, and code blocks keep their content as written.
+- Code blocks name their language, such as ` ```ts `, from a `language-` class on the `<code>` directly inside the `<pre>`, the convention the HTML standard suggests and CommonMark writes.
+
+### Fixes
+
+- Inside inline code, links and images are written as text instead of Markdown that would show literally.
+- Spaces on both sides of an inline element no longer become two spaces.
+
 ## 0.1.2 (2026-09-29)
 
 ### Fixes

@@ -42,7 +42,7 @@ const { links, images, meta, markdown } = await parseHtml(response, {
 
 Links are deduplicated by URL, counted, and sorted by count. Each carries its `text`, `kind`, `resource`, `count`, and, where present, `rel`, `target`, and `aria-label`. URLs are absolute; paths keep their case.
 
-The Markdown leaves out navigation, footer, forms, scripts, consent dialogs, visually hidden helpers, and binary or EXIF text, so it holds what a reader reads.
+The Markdown leaves out navigation, footer, forms, scripts, consent dialogs, visually hidden helpers, and binary or EXIF text, so it holds what a reader reads. It keeps bold and italic text as `**bold**` and `*italic*` and inline code in backticks, and names the language of code blocks from a `language-` class on the `<code>` inside the `<pre>`, the convention the HTML standard suggests and CommonMark writes (`<pre><code class="language-ts">`).
 
 ## Clean A Page
 
@@ -79,7 +79,7 @@ const markdown = await markdownWithAi(env.AI, page, { url, images: true });
 
 ## Limits
 
-The streaming Markdown follows HTMLRewriter's model: tables become rows without alignment, and bold or italic formatting is dropped. Use `markdownWithAi` where that matters. Elements that are opened but never closed, such as `<span/>`, keep their state to the end of the page.
+The streaming Markdown follows HTMLRewriter's model: tables become rows without alignment, and bold, italic, or inline code that spans lines or blocks, such as `<strong>` around two paragraphs, becomes plain text. Use `markdownWithAi` where that matters. Elements that are opened but never closed, such as `<span/>`, keep their state to the end of the page.
 
 ## Develop
 

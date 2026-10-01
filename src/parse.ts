@@ -1,4 +1,5 @@
-import { MarkdownWriter } from "./markdown.ts";
+import { MarkdownWriter, languageName } from "./markdown.ts";
+import type { InlineKind } from "./markdown.ts";
 import {
   collapseWhitespace,
   decodeEntities,
@@ -147,6 +148,14 @@ const blockTags = new Set([
   "div",
 ]);
 
+const inlineTags = new Map<string, InlineKind>([
+  ["b", "**"],
+  ["strong", "**"],
+  ["i", "*"],
+  ["em", "*"],
+  ["code", "code"],
+]);
+
 // Content that is not what a reader reads: page chrome, code, and consent dialogs.
 const hiddenFromMarkdown = [
   "script",
@@ -201,6 +210,17 @@ const enter = (pass: Pass, element: Element, onEnd: () => void) => {
   pass.endActions = actions;
   return true;
 };
+
+/**
+ * The language of a code block. HTML has no attribute for it; the HTML standard suggests a class
+ * prefixed with `language-` on the `<code>` element, which CommonMark writes for fenced code and
+ * highlighters such as Prism and highlight.js read.
+ */
+const classLanguage = (element: Element) =>
+  languageName(
+    /(?:^|\s)language-(?<name>\S+)/u.exec(readAttribute(element, "class") ?? "")
+      ?.groups?.name
+  );
 
 const clean = (text: string) =>
   collapseWhitespace(removeHyphenation(decodeEntities(text))).trim();
@@ -292,6 +312,14 @@ const onStructure = (rewriter: HTMLRewriter, pass: Pass) => {
   if (pass.options.skipAriaHidden ?? true) {
     next = next.on("[aria-hidden='true']", hide(pass));
   }
+  // The fence is written when <pre> opens; the language on its <code> names it afterwards.
+  next = next.on("pre > code", {
+    element(element) {
+      if (writing(pass)) {
+        pass.markdown?.codeLanguage(classLanguage(element));
+      }
+    },
+  });
   return next.on("*", {
     element(element) {
       // Namespaced tags such as <x:xmpmeta> carry image metadata, not content.
@@ -308,7 +336,16 @@ const onStructure = (rewriter: HTMLRewriter, pass: Pass) => {
         }
       }
       const tag = element.tagName.toLowerCase();
-      if (!writing(pass) || !blockTags.has(tag)) {
+      if (!writing(pass)) {
+        return;
+      }
+      // Inline formatting closes whatever it opened, so its markers stay paired even when a
+      // context ends on the same element.
+      const inline = inlineTags.get(tag);
+      if (inline && enter(pass, element, () => pass.markdown?.closeInline())) {
+        pass.markdown?.openInline(inline);
+      }
+      if (!blockTags.has(tag)) {
         return;
       }
       pass.markdown?.open(tag);
