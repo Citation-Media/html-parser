@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0 (2026-10-01)
+
+### Features
+
+- `parseHtml` reads the page's JSON-LD with the new `structuredData` option, in the same pass: the nodes of every `<script type="application/ld+json">` block, with lists and `@graph` expanded, and the blocks that are not valid JSON. `readStructuredData` does the same for block texts you already have.
+
 ## 0.2.0 (2026-10-01)
 
 ### Breaking changes

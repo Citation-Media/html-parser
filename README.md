@@ -36,6 +36,9 @@ const { links, images, meta } = await parseHtml(response, {
 | `headings` | The first 200 headings with their level and text, and `headingCounts` per level without a limit. |
 | `classPrefixes` | Counts of elements whose class starts with a prefix, such as `["elementor-", "brxe-", "wp-block-"]`. |
 | `context` | A CSS selector such as `main` or `article`: only content inside matching elements counts. When nothing matches, the whole page counts, if the input is text. |
+| `structuredData` | The page's JSON-LD as `items`, the nodes of every `<script type="application/ld+json">` block with lists and `@graph` expanded, and `invalid`, the blocks that are not valid JSON with their position and error. Read wherever the blocks are, regardless of `context`. |
+
+`readStructuredData(blocks)` turns the text of JSON-LD blocks into the same result, for blocks you already have. It checks only that each block is JSON; whether the nodes carry the properties a search engine expects is up to the caller.
 
 Links are deduplicated by URL, counted, and sorted by count. Each carries its `text`, `kind`, `resource`, `count`, and, where present, `rel`, `target`, and `aria-label`. URLs are absolute; paths keep their case.
 

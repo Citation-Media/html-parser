@@ -1,6 +1,6 @@
 {
   "name": "@citation-media/html-parser",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Streaming HTML parser for Cloudflare Workers: links, images, resources, and metadata without a DOM, built on HTMLRewriter.",
   "keywords": [
     "cloudflare-workers",
