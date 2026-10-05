@@ -82,8 +82,11 @@ export interface Script {
 export interface Resources {
   scripts: Script[];
   frames: string[];
-  /** `<link>` elements with their `rel`, such as stylesheets and preconnects. */
-  links: { href: string; rel: string }[];
+  /**
+   * `<link>` elements with their `rel`, such as stylesheets and preconnects, and their `type`
+   * where they have one, such as `text/markdown` for a Markdown version of the page.
+   */
+  links: { href: string; rel: string; type?: string }[];
 }
 
 export interface Meta {
@@ -726,9 +729,11 @@ const enterResource = (pass: Pass, frame: Frame) => {
   }
   const { href } = attributes;
   if (href !== undefined && resources.links.length < maxResources) {
+    const { type } = attributes;
     resources.links.push({
       href: resolve(pass, href),
       rel: attributes.rel ?? "",
+      ...(type && { type }),
     });
   }
 };

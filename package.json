@@ -1,6 +1,6 @@
 {
   "name": "@citation-media/html-parser",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "HTML parser for any JavaScript runtime: links, images, resources, metadata, JSON-LD, styles, hydration, and text in one pass without a DOM, with Markdown from mdream.",
   "keywords": [
     "cloudflare-workers",
