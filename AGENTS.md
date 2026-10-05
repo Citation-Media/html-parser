@@ -7,12 +7,13 @@ citation:
 
 # Agent Instructions
 
-This repository maintains `@citation-media/html-parser`, a library that extracts links, images, resources, metadata, headings, and class counts from HTML in one HTMLRewriter pass, without a DOM, for Cloudflare Workers, and cleans HTML. Converting HTML to Markdown is out of scope; consumers use mdream for it. Everything it needs is in this repository; keep it that way, since the repository and the npm package are public.
+This repository maintains `@citation-media/html-parser`, a library that extracts links, images, resources, metadata, headings, class counts, JSON-LD, styles, hydration, visible text, and inline code from HTML in one pass with mdream's tokenizer, without a DOM, in any JavaScript runtime, and cleans HTML. Converting HTML to Markdown is mdream's job; `parseHtml` only hands it the same input. Everything it needs is in this repository; keep it that way, since the repository and the npm package are public.
 
 ## Runtime
 
-- The package runs where `HTMLRewriter` is a global: Cloudflare Workers and their local runtime. Tests run inside workerd through `@cloudflare/vitest-pool-workers`, not in Node.
-- HTMLRewriter elements are not DOM nodes: attributes are readable only inside the element handler, void elements throw on `onEndTag`, and text arrives in chunks with entities still encoded.
+- `parseHtml` runs in any JavaScript runtime on `@mdream/js`, a peer dependency. `src/engine.ts` drives its tokenizer and tunes its state so whitespace and CSS stay as written; mdream's Markdown converter runs unchanged. Pin the versions the parity of these tunings is tested with.
+- `cleanHtml` runs where `HTMLRewriter` is a global: Cloudflare Workers and their local runtime. HTMLRewriter elements are not DOM nodes: attributes are readable only inside the element handler, void elements throw on `onEndTag`, and text arrives in chunks with entities still encoded.
+- Tests run in workerd through `@cloudflare/vitest-pool-workers` and in Node; the `cleanHtml` tests only in workerd.
 - Keep the public API stable: link kinds, counts, and filters; images with missing (`null`) versus empty (`""`) alt texts; the cleaning options. A breaking change needs a major version, or a minor version before 1.0.
 
 ## Checks

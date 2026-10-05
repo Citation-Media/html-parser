@@ -1,13 +1,14 @@
 {
   "name": "@citation-media/html-parser",
-  "version": "0.3.0",
-  "description": "Streaming HTML parser for Cloudflare Workers: links, images, resources, and metadata without a DOM, built on HTMLRewriter.",
+  "version": "0.4.0",
+  "description": "HTML parser for any JavaScript runtime: links, images, resources, metadata, JSON-LD, styles, hydration, and text in one pass without a DOM, with Markdown from mdream.",
   "keywords": [
     "cloudflare-workers",
     "html",
-    "htmlrewriter",
+    "mdream",
     "parser",
-    "scraping"
+    "scraping",
+    "seo"
   ],
   "homepage": "https://github.com/Citation-Media/html-parser#readme",
   "bugs": "https://github.com/Citation-Media/html-parser/issues",
@@ -46,11 +47,15 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.22.0",
     "@cloudflare/workers-types": "5.20260929.1",
+    "@mdream/js": "1.7.2",
     "oxfmt": "0.68.0",
     "oxlint": "1.83.0",
     "typescript": "6.0.3",
     "ultracite": "7.12.0",
     "vitest": "4.1.11"
+  },
+  "peerDependencies": {
+    "@mdream/js": "^1.7.2 || 2.0.0-beta.1"
   },
   "engines": {
     "node": ">=22.18.0"
