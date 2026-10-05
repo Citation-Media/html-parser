@@ -176,11 +176,13 @@ describe("resources and meta", () => {
     expect(resources?.scripts).toEqual([
       {
         attributes: ["src"],
+        head: true,
         src: "https://example.com/app.js",
         type: undefined,
       },
       {
         attributes: ["type", "data-cookieconsent", "src"],
+        head: true,
         src: "https://www.googletagmanager.com/gtm.js",
         type: "text/plain",
       },

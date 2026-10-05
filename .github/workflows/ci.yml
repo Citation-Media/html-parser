@@ -32,7 +32,7 @@ jobs:
       - name: Lint, format, and types
         run: npm run check
 
-      # The suite runs inside workerd, the Workers runtime, where HTMLRewriter is built in.
+      # The suite runs in workerd, the Workers runtime, and in Node; cleanHtml only in workerd.
       - name: Test
         run: npm test
 
