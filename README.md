@@ -8,7 +8,7 @@ Extracts links, images, resources, metadata, headings, class counts, JSON-LD, st
 npm install @citation-media/html-parser @mdream/js
 ```
 
-`@mdream/js` is a peer dependency, `^1.7.2` or `2.0.0-beta.1`. `cleanHtml` builds on [HTMLRewriter](https://developers.cloudflare.com/workers/runtime-apis/html-rewriter/) and runs only where it is a global: Cloudflare Workers, `wrangler dev`, and `@cloudflare/vitest-pool-workers`.
+`@mdream/js` is a peer dependency, `^1.7.2` or `2.0.0-beta.1`. [unhead](https://unhead.unjs.io/) comes along for the `head` option. `cleanHtml` builds on [HTMLRewriter](https://developers.cloudflare.com/workers/runtime-apis/html-rewriter/) and runs only where it is a global: Cloudflare Workers, `wrangler dev`, and `@cloudflare/vitest-pool-workers`.
 
 ## Parse A Page
 
@@ -43,6 +43,7 @@ const { links, images, meta } = await parseHtml(response, {
 | `text` | The text a visitor reads, as `length` and `content`: without the head, scripts, styles, templates, `<noscript>`, and SVG, with whitespace collapsed and block elements separated by a space. `{ maxLength }` cuts `content`, 100,000 characters by default; `length` counts the whole text. Little text in the body as served marks a page that scripts render. |
 | `inlineCode` | What a Content Security Policy has to allow: `scripts`, the text of every inline script a browser runs, exactly as written for its hash, without data blocks such as JSON-LD or templates; `eventHandlers`, attributes such as `onclick`; `javascriptUrls` in `href`, `src`, `action`, and `formaction`; `styleElements` and `styleAttributes`; and `formActions`, the absolute URLs forms send to. Read regardless of `context`. |
 | `markdown` | The page as Markdown, written by mdream from the same input: `true` for mdream's defaults with the page's origin, or mdream's options, such as `{ plugins: { filter: { exclude: ["nav"] }, isolateMain: true } }`. mdream's filters shape only the Markdown, never what the other options collect. |
+| `head` | The `<head>` as [unhead](https://unhead.unjs.io/) validates it, see [Head](#head). Read regardless of `context`. |
 
 `readStructuredData(blocks)` turns the text of JSON-LD blocks into the same result, for blocks you already have. It checks only that each block is JSON; whether the nodes carry the properties a search engine expects is up to the caller.
 
@@ -66,6 +67,21 @@ const page = await parseHtml(await fetch(url), {
 ```
 
 For a response or stream with `markdown`, the body is read once and feeds the tokenizer and mdream's converter side by side. The facts come from mdream's tokenizer, tuned to keep whitespace and CSS as the page has them; the Markdown comes from mdream's converter unchanged. Measured in workerd on 18 pages from 4 KB to 1.9 MB, all options together take about a seventh of the time the earlier HTMLRewriter pass took, and the facts with Markdown a quarter of the facts plus two Markdown conversions.
+
+## Head
+
+With `head`, `parseHtml` hands the `<head>` it read to unhead: `elements` lists the head's elements in page order, each with its `attributes`, its Capo `weight`, the `size` in bytes of inline content, and the title's `text`; `issues` lists what unhead's validator finds, each with its `rule`, unhead's English `message`, its `severity`, and the index of its `element`.
+
+```ts
+const { head } = await parseHtml(html, { url, head: true });
+for (const issue of head.issues) {
+  console.log(issue.rule, head.elements[issue.element ?? -1]?.attributes);
+}
+```
+
+The rules are unhead's own, such as `render-blocking-script`, `charset-not-early`, `too-many-preloads`, `preload-font-crossorigin`, `preconnect-missing-crossorigin`, `inline-style-size`, `non-absolute-canonical`, `og-image-missing-dimensions`, or `viewport-user-scalable`. unhead normally sorts and deduplicates the tags it renders; here every element is its own entry with one weight, so the rules read the page's order and tags. Rules about using unhead's API, such as `invalid-input-shape`, are off. `{ head: { rules } }` passes unhead's rule configuration, such as `{ "too-many-preloads": ["warn", { max: 10 }] }` or `{ "deprecated-twitter-meta": "off" }`.
+
+`weight` is Capo's order as unhead computes it: the lower, the earlier an element belongs, from `-30` for a Content-Security-Policy over `-20` for the charset, `10` for the title, and `50` for blocking scripts, to `100`. An element with a lower weight than one before it stands later than it should. What to report, and in which words, is up to the caller.
 
 ## Hydration
 

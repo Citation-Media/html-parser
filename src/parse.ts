@@ -2,6 +2,8 @@ import type { ElementNode } from "@mdream/js";
 
 import { markdownOf, scanStream, scanText } from "./engine.ts";
 import type { Handlers, HtmlInput, MarkdownOptions } from "./engine.ts";
+import { isHeadTag, readHead } from "./head.ts";
+import type { HeadOptions, OpenHeadElement, PageHead } from "./head.ts";
 import {
   emptyHydration,
   hydrationOf,
@@ -180,6 +182,12 @@ export interface ParseOptions {
    * shape only the Markdown, not what the other options collect.
    */
   markdown?: boolean | MarkdownOptions;
+  /**
+   * The `<head>` as unhead validates it, as `head`: its elements in page order with Capo's weight,
+   * and the issues unhead's rules find, such as render-blocking scripts or too many preloads. An
+   * object passes unhead's rule configuration. Read regardless of `context`.
+   */
+  head?: boolean | HeadOptions;
 }
 
 export interface ParseResult {
@@ -199,6 +207,7 @@ export interface ParseResult {
   text?: VisibleText;
   inlineCode?: InlineCode;
   markdown?: string;
+  head?: PageHead;
 }
 
 const maxHeadings = 200;
@@ -321,6 +330,8 @@ interface Frame extends SelectorFrame {
   title: string[] | undefined;
   /** The text of an inline script that runs, for `inlineCode`. */
   inline: string[] | undefined;
+  /** The head element it is, for `head`. */
+  headElement: OpenHeadElement | undefined;
 }
 
 /** What the handlers of one pass share while the page streams through. */
@@ -370,6 +381,8 @@ interface Pass {
   };
   inlineCode: InlineCode;
   formActions: Set<string>;
+  /** The head's elements in page order, for `head`. */
+  headElements: OpenHeadElement[];
 }
 
 const collecting = (pass: Pass) => pass.inContext > 0;
@@ -637,6 +650,7 @@ const openFrame = (pass: Pass, node: ElementNode): Frame => {
     children: 0,
     containers: undefined,
     context: false,
+    headElement: undefined,
     heading: undefined,
     inline: undefined,
     link: undefined,
@@ -768,6 +782,10 @@ const enter = (pass: Pass, node: ElementNode) => {
   if (options.inlineCode) {
     readInlineAttributes(pass, name, attributes);
   }
+  if (options.head && pass.inHead > 0 && pass.inSvg === 0 && isHeadTag(name)) {
+    frame.headElement = { attributes, content: [], tag: name };
+    pass.headElements.push(frame.headElement);
+  }
 };
 
 const leaveStructure = (pass: Pass, frame: Frame) => {
@@ -867,10 +885,9 @@ const exit = (pass: Pass, node: ElementNode) => {
   }
 };
 
-const text = (pass: Pass, value: string) => {
-  pass.title?.push(value);
-  const frame = pass.stack.at(-1);
-  if (frame?.name === "script") {
+/** Text of a script or style, which only some options read. */
+const rawText = (pass: Pass, frame: Frame, value: string) => {
+  if (frame.name === "script") {
     if (pass.readingJsonLd) {
       const last = pass.jsonLd.length - 1;
       const block = pass.jsonLd[last] ?? "";
@@ -882,11 +899,20 @@ const text = (pass: Pass, value: string) => {
       readScriptText(pass.hydration, value);
     }
     frame.inline?.push(value);
-  } else if (frame?.name === "style" && pass.readingStyle) {
+  } else if (frame.name === "style" && pass.readingStyle) {
     const block = pass.styles.blocks.at(-1);
     if (block && block.css.length < maxStyleBlockLength) {
       block.css += value;
     }
+  }
+};
+
+const text = (pass: Pass, value: string) => {
+  pass.title?.push(value);
+  const frame = pass.stack.at(-1);
+  if (frame) {
+    frame.headElement?.content.push(value);
+    rawText(pass, frame, value);
   }
   if (pass.layout) {
     readText(pass.layout, value);
@@ -919,6 +945,7 @@ const newPass = (options: ParseOptions): Pass => {
     ),
     contextFound: false,
     formActions: new Set(),
+    headElements: [],
     heading: undefined,
     headingCounts: [0, 0, 0, 0, 0, 0],
     headings: [],
@@ -1006,6 +1033,12 @@ const resultOf = (pass: Pass, markdown: string | undefined): ParseResult => {
   }
   if (markdown !== undefined) {
     result.markdown = markdown;
+  }
+  if (options.head) {
+    result.head = readHead(
+      pass.headElements,
+      options.head === true ? {} : options.head
+    );
   }
   const { layout } = pass;
   if (layout) {

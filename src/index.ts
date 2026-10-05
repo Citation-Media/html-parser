@@ -3,6 +3,13 @@ export { colorDistance, colorsIn, parseColor, toHex } from "./colors.ts";
 export type { Rgb } from "./colors.ts";
 export type { CleanOptions } from "./clean.ts";
 export type {
+  HeadElement,
+  HeadIssue,
+  HeadOptions,
+  HeadTagName,
+  PageHead,
+} from "./head.ts";
+export type {
   AstroIsland,
   Hydration,
   HydrationFramework,

@@ -16,6 +16,7 @@
 - The new `text` option returns the visible text with its length, for telling server-rendered pages from app shells or reading a page's words.
 - The new `inlineCode` option returns what a Content Security Policy has to allow: the exact text of inline scripts that run, event handler attributes, `javascript:` URLs, inline styles, and form targets.
 - A `context` that matches nothing falls back to the whole page for responses and streams too, not only for text.
+- The new `head` option hands the `<head>` to unhead's validator in page order: its elements with their Capo weights, and the issues unhead's rules find, such as render-blocking scripts, a late charset, or too many preloads. unhead is now a dependency.
 - `parseHtml` collects the page's own CSS with the new `styles` option: each `<style>` block with its `id`, each `style` attribute with its element, and the stylesheets the page loads or preloads.
 - `readStyles` builds a style map from CSS text without a browser: custom properties with their definitions, uses, and resolved colours; every colour a declaration paints with, written out or read through a variable; the font families declarations ask for; the `@font-face` rules with their weight, style, and `font-display`; and `@import`s. `readDeclarations` returns one stylesheet's declarations with their selectors and at-rules.
 - `parseColor`, `colorsIn`, `toHex`, and `colorDistance` read and compare CSS colours, from hex to `oklch()`.
