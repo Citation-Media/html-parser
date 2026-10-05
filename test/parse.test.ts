@@ -194,6 +194,28 @@ describe("resources and meta", () => {
     ]);
   });
 
+  test("keeps the type of link elements that have one", async () => {
+    const html = `<head>
+      <link rel="alternate" type="text/markdown" href="/start.md">
+      <link rel="alternate" type="application/rss+xml" href="/feed.xml">
+      <link rel="preconnect" href="https://fonts.gstatic.com">
+    </head>`;
+    const { resources } = await parseHtml(html, { resources: true, url });
+    expect(resources?.links).toEqual([
+      {
+        href: "https://example.com/start.md",
+        rel: "alternate",
+        type: "text/markdown",
+      },
+      {
+        href: "https://example.com/feed.xml",
+        rel: "alternate",
+        type: "application/rss+xml",
+      },
+      { href: "https://fonts.gstatic.com/", rel: "preconnect" },
+    ]);
+  });
+
   test("reads title, description, language, and canonical URL", async () => {
     const { meta } = await parseHtml(sample, { meta: true, url });
     expect(meta).toMatchObject({

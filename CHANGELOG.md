@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1 (2026-10-06)
+
+### Features
+
+- `resources.links` carry the `<link>` element's `type` where it has one, so a Markdown version a page announces with `<link rel="alternate" type="text/markdown">` can be told from a feed or another alternate.
+
 ## 0.4.0 (2026-10-05)
 
 ### Breaking changes

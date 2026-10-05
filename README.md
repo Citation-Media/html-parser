@@ -31,7 +31,7 @@ const { links, images, meta } = await parseHtml(response, {
 | `url` | Required. Resolves relative URLs and tells internal links from external ones. |
 | `links` | `true` or a filter: `kinds` (`internal`, `external`, `special`, `anchor`) and `resources: false` to drop downloads such as PDFs. |
 | `images` | Images with `alt` (`null` when missing, `""` when decorative), `width`, `height`, `loading`, and whether they have a `srcset`. |
-| `resources` | Scripts with their `src`, `type`, attribute names, and whether they stand in the `<head>`, frame URLs, and `<link>` elements with their `rel`. A classic script in the head without `async`, `defer`, or `nomodule` blocks the first render. |
+| `resources` | Scripts with their `src`, `type`, attribute names, and whether they stand in the `<head>`, frame URLs, and `<link>` elements with their `rel` and, where they have one, `type`, such as `text/markdown` for a Markdown version of the page. A classic script in the head without `async`, `defer`, or `nomodule` blocks the first render. |
 | `meta` | Title, description, language, canonical URL, robots, viewport, generator, and Open Graph image. The title is the document's first `<title>`; an SVG's `<title>` names the graphic and does not count. |
 | `headings` | The first 200 headings with their level and text, and `headingCounts` per level without a limit. |
 | `classPrefixes` | Counts of elements whose class starts with a prefix, such as `["elementor-", "brxe-", "wp-block-"]`. |
