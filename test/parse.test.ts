@@ -28,6 +28,23 @@ const sample = `
     </body>
   </html>`;
 
+describe("ids", () => {
+  test("lists every id and each link's name once, in page order, regardless of context", async () => {
+    const { ids } = await parseHtml(
+      `<header id="top"><a name="start"></a></header>
+      <main><h2 id="team">Team</h2><p id="team">Again</p>
+      <a href="#team" name="">Team</a><div name="not-a-target"></div></main>`,
+      { context: "main", ids: true, url }
+    );
+    expect(ids).toEqual(["top", "start", "team"]);
+  });
+
+  test("leaves ids out unless asked", async () => {
+    const { ids } = await parseHtml('<p id="a"></p>', { url });
+    expect(ids).toBeUndefined();
+  });
+});
+
 describe("links", () => {
   test("deduplicates, counts, resolves, and sorts by count", async () => {
     const { links } = await parseHtml(sample, { links: true, url });

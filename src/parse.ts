@@ -180,6 +180,11 @@ export interface ParseOptions {
   /** What a Content Security Policy has to allow, as `inlineCode`. Read regardless of `context`. */
   inlineCode?: boolean;
   /**
+   * The targets a fragment link can point to, as `ids`: every element's `id` and each `<a>`'s
+   * `name`, once each. Read regardless of `context`.
+   */
+  ids?: boolean;
+  /**
    * Writes the page as Markdown with mdream, as `markdown`. `true` uses mdream's defaults with the
    * page's origin; an object passes its options, such as `plugins`, to mdream. mdream's filters
    * shape only the Markdown, not what the other options collect.
@@ -209,6 +214,8 @@ export interface ParseResult {
   hydration?: Hydration | null;
   text?: VisibleText;
   inlineCode?: InlineCode;
+  /** The page's `id`s and `<a name>`s in page order, each once, at most 5,000. */
+  ids?: string[];
   markdown?: string;
   head?: PageHead;
 }
@@ -218,6 +225,7 @@ const maxStyleBlocks = 200;
 const maxStyleBlockLength = 2_000_000;
 const maxStyleAttributes = 2000;
 const maxResources = 500;
+const maxIds = 5000;
 const defaultTextLength = 100_000;
 
 // The type may carry parameters, such as `application/ld+json; charset=utf-8`.
@@ -386,6 +394,8 @@ interface Pass {
   formActions: Set<string>;
   /** The head's elements in page order, for `head`. */
   headElements: OpenHeadElement[];
+  /** The fragment targets read so far, for `ids`. */
+  ids: Set<string>;
 }
 
 const collecting = (pass: Pass) => pass.inContext > 0;
@@ -470,6 +480,19 @@ const countClasses = (pass: Pass, attributes: Record<string, string>) => {
   for (const prefix of pass.options.classPrefixes ?? []) {
     if (classes.some((name) => name.startsWith(prefix))) {
       pass.classCounts[prefix] = (pass.classCounts[prefix] ?? 0) + 1;
+    }
+  }
+};
+
+/** An element's `id`, and an `<a>`'s `name`, which fragment links can point to as well. */
+const readIds = (
+  pass: Pass,
+  name: string,
+  attributes: Record<string, string>
+) => {
+  for (const target of [attributes.id, name === "a" ? attributes.name : ""]) {
+    if (target && pass.ids.size < maxIds) {
+      pass.ids.add(target);
     }
   }
 };
@@ -787,6 +810,9 @@ const enter = (pass: Pass, node: ElementNode) => {
   if (options.inlineCode) {
     readInlineAttributes(pass, name, attributes);
   }
+  if (options.ids) {
+    readIds(pass, name, attributes);
+  }
   if (options.head && pass.inHead > 0 && pass.inSvg === 0 && isHeadTag(name)) {
     frame.headElement = { attributes, content: [], tag: name };
     pass.headElements.push(frame.headElement);
@@ -955,6 +981,7 @@ const newPass = (options: ParseOptions): Pass => {
     headingCounts: [0, 0, 0, 0, 0, 0],
     headings: [],
     hydration: emptyHydration(),
+    ids: new Set(),
     images: new Map(),
     inContext: options.context ? 0 : 1,
     inHead: 0,
@@ -1035,6 +1062,9 @@ const resultOf = (pass: Pass, markdown: string | undefined): ParseResult => {
       ...pass.inlineCode,
       formActions: [...pass.formActions],
     };
+  }
+  if (options.ids) {
+    result.ids = [...pass.ids];
   }
   if (markdown !== undefined) {
     result.markdown = markdown;
