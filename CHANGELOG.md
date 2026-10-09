@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0 (2026-10-09)
+
+### Features
+
+- The new `ids` option returns the targets a fragment link can point to: every element's `id` and each `<a>`'s `name`, in page order and each once, read regardless of `context`. With the `anchor` links of a page, or the fragments of internal links to it, they show links whose target is missing.
+
 ## 0.4.1 (2026-10-06)
 
 ### Features
