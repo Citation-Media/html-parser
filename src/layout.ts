@@ -88,9 +88,26 @@ export const emptyLayout = (): Layout => ({
 /** An element's attributes, with entities decoded. */
 type Attributes = Record<string, string>;
 
+/**
+ * Whether an element hides its content from screen readers, by `aria-hidden="true"` or `inert`.
+ * An open modal dialog marks the page behind it that way for a moment, not for good, the main
+ * landmark included; in a rendered page saved while a consent dialog was open, the mark is still
+ * there. Without a browser nothing tells whether a dialog is open, so only the main landmark,
+ * which no page hides from readers for good, is left out. Attributes are the element's, with the
+ * attribute names in lower case.
+ */
+export const hiddenFromReaders = (
+  tag: string,
+  attributes: Record<string, string>
+) =>
+  (attributes["aria-hidden"] === "true" || "inert" in attributes) &&
+  tag !== "main" &&
+  attributes.role !== "main";
+
 const hides = (tag: string, attributes: Attributes) =>
   (tag === "dialog" && !("open" in attributes)) ||
   "hidden" in attributes ||
+  hiddenFromReaders(tag, attributes) ||
   hiddenStyle.test(attributes.style ?? "") ||
   hiddenClass.test(attributes.class ?? "");
 

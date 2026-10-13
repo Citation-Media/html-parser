@@ -1,3 +1,4 @@
+import { hiddenFromReaders } from "./layout.ts";
 import type { LinkFilter } from "./parse.ts";
 import { looksBinary, readAttribute } from "./text.ts";
 import { absoluteUrl, isResource, linkKind } from "./urls.ts";
@@ -16,7 +17,12 @@ export interface CleanOptions {
     /** Style elements, style attributes, and inline SVG. */
     styles?: boolean;
     comments?: boolean;
+    /** The consent tools' dialogs, banners, and content blockers, see `consentSelectors`. */
     cookieConsent?: boolean;
+    /**
+     * What screen readers do not get: `aria-hidden="true"`, `inert`, and texts for screen readers
+     * only, such as skip links. The main landmark stays, see `hiddenFromReaders`.
+     */
     ariaHidden?: boolean;
     /** img, picture, and figure elements. */
     images?: boolean;
@@ -33,17 +39,50 @@ export interface CleanOptions {
   context?: string;
 }
 
-const cookieConsent = [
+/**
+ * The dialogs, banners, and content blockers of widespread consent tools: Borlabs Cookie,
+ * Cookiebot, Usercentrics, Complianz, CookieYes, Cookie Law Info, OneTrust, Klaro, CCM19, Real
+ * Cookie Banner, consentmanager, CookieConsent, Didomi, Sourcepoint, Quantcast, TrustArc, Moove,
+ * and ids that name a cookie or consent banner. Selectors HTMLRewriter and the `context` option
+ * accept, for callers that leave the consent tool out of what they read or measure.
+ */
+export const consentSelectors: readonly string[] = [
+  "#BorlabsCookieBox",
   "[id^='brlbs-cmpnt']",
   "[class^='brlbs-cmpnt']",
+  ".brlbs-cmpnt-dialog",
   "[consent-skip-blocker]",
+  "#CybotCookiebotDialog",
   "#usercentrics-root",
+  "#usercentrics-cmp-ui",
+  ".cmplz-cookiebanner",
+  "#cmplz-cookiebanner-container",
+  ".cky-consent-container",
+  "#cookie-law-info-bar",
+  "#onetrust-consent-sdk",
+  "#onetrust-banner-sdk",
+  ".klaro",
+  "#ccm-widget",
+  ".ccm-root",
+  ".rcb-banner",
+  "[id^='real-cookie-banner']",
+  "#cmpbox",
+  "#cmpbox2",
+  ".cmpboxBG",
+  "#cc-main",
+  "#didomi-host",
+  "[id^='sp_message_container']",
+  ".qc-cmp2-container",
+  "#truste-consent-track",
+  "#moove_gdpr_cookie_info_bar",
+  "[id*='cookie-banner' i]",
+  "[id*='cookiebanner' i]",
+  "[id*='consent-banner' i]",
+  "div[class*='consent-banner']",
   "div[id*='consent-modal']",
   "div[class*='consent-modal']",
   "div[id*='consent-wrapper']",
   "div[class*='consent-wrapper']",
-  "div[id*='consent-banner']",
-  "div[class*='consent-banner']",
 ];
 
 const remove = {
@@ -148,13 +187,27 @@ export const cleanHtml = (
     rewriter = rewriter.on("style, svg", remove);
   }
   if (removed.cookieConsent) {
-    rewriter = rewriter.on(cookieConsent.join(", "), remove);
+    rewriter = rewriter.on(consentSelectors.join(", "), remove);
   }
   if (removed.ariaHidden) {
-    rewriter = rewriter.on(
-      "[aria-hidden='true'], .screen-reader-text, .sr-only, .visually-hidden, .skip-link",
-      remove
-    );
+    rewriter = rewriter
+      .on("[aria-hidden='true'], [inert]", {
+        element(element) {
+          // The main landmark an open dialog marked hidden stays; see `hiddenFromReaders`.
+          if (
+            hiddenFromReaders(
+              element.tagName,
+              Object.fromEntries(element.attributes)
+            )
+          ) {
+            element.remove();
+          }
+        },
+      })
+      .on(
+        ".screen-reader-text, .sr-only, .visually-hidden, .skip-link",
+        remove
+      );
   }
   if (removed.images) {
     rewriter = rewriter.on("img, picture, figure", remove);

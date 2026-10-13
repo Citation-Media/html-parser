@@ -1,4 +1,4 @@
-export { cleanHtml } from "./clean.ts";
+export { cleanHtml, consentSelectors } from "./clean.ts";
 export { colorDistance, colorsIn, parseColor, toHex } from "./colors.ts";
 export type { Rgb } from "./colors.ts";
 export type { CleanOptions } from "./clean.ts";
@@ -14,6 +14,7 @@ export type {
   Hydration,
   HydrationFramework,
 } from "./hydration.ts";
+export { hiddenFromReaders } from "./layout.ts";
 export type { ScreenPosition } from "./layout.ts";
 export { parseHtml, parseHtmlSync } from "./parse.ts";
 export type {
