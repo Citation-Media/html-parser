@@ -104,12 +104,18 @@ export const hiddenFromReaders = (
   tag !== "main" &&
   attributes.role !== "main";
 
-const hides = (tag: string, attributes: Attributes) =>
+/**
+ * Whether the markup hides an element's content: a `<template>`, a `<dialog>` without
+ * `open`, the `hidden` attribute, `aria-hidden="true"` or `inert` (see `hiddenFromReaders`), or
+ * `display: none` or `visibility: hidden` in its `style`. What the markup states, nothing guessed
+ * from classes; the `hidden` option's rule can add to it or take from it.
+ */
+export const hidesContent = (tag: string, attributes: Record<string, string>) =>
+  tag === "template" ||
   (tag === "dialog" && !("open" in attributes)) ||
   "hidden" in attributes ||
   hiddenFromReaders(tag, attributes) ||
-  hiddenStyle.test(attributes.style ?? "") ||
-  hiddenClass.test(attributes.class ?? "");
+  (attributes.style !== undefined && hiddenStyle.test(attributes.style));
 
 type Container = "hidden" | "skipped" | "carousel" | "fixed" | "navigation";
 
@@ -138,9 +144,14 @@ const isHidden = (layout: Layout) =>
 const containersOf = (
   tag: string,
   attributes: Attributes,
-  names: string
+  names: string,
+  hiddenByMarkup: boolean
 ): readonly Container[] => {
-  const hidden = hides(tag, attributes);
+  // Besides what the markup states, classes such as `modal` or `sr-only` mark closed or
+  // screen-reader-only containers; a guess the first-screen estimate accepts.
+  const hidden =
+    hiddenByMarkup ||
+    (names !== "" && hiddenClass.test(attributes.class ?? ""));
   const skipped = skippedTags.has(tag);
   const carousel = names !== "" && carouselClass.test(names);
   const fixed = tag === "header" || (names !== "" && fixedClass.test(names));
@@ -169,12 +180,14 @@ const containersOf = (
 
 /**
  * Reads an element's start tag: records what comes before it, opens the containers it opens, and
- * returns them for `closeContainers` at its end tag.
+ * returns them for `closeContainers` at its end tag. `hiddenByMarkup` is what `hidesContent`, or
+ * the caller's rule, says about the element.
  */
 export const readElement = (
   layout: Layout,
   tag: string,
-  attributes: Attributes
+  attributes: Attributes,
+  hiddenByMarkup: boolean
 ): readonly Container[] => {
   const { class: classes, id } = attributes;
   // Most elements carry neither, and their names need no pattern.
@@ -182,7 +195,7 @@ export const readElement = (
     classes === undefined && id === undefined
       ? ""
       : `${classes ?? ""} ${id ?? ""}`;
-  const opened = containersOf(tag, attributes, names);
+  const opened = containersOf(tag, attributes, names, hiddenByMarkup);
   layout.ownHidden = opened.includes("hidden") || opened.includes("skipped");
   layout.textBefore = layout.text;
   layout.imagesBefore = layout.images;

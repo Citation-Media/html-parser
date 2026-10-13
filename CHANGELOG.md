@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.7.0 (2026-10-13)
+
+### Features
+
+- The `hidden` option marks each link, image, and heading inside hidden content: a `<template>`, a `<dialog>` without `open`, the `hidden` attribute, `aria-hidden="true"` or `inert`, or `display: none` or `visibility: hidden` in a `style` attribute. In place of `true`, a rule `(tag, attributes, byMarkup) => boolean` decides for each element given what the markup says, to keep popups or hide screen-reader-only classes as well; `positions` follows the same decision. A link or image repeated in plain sight is not hidden. `hidesContent(tag, attributes)` is the markup rule, exported beside `hiddenFromReaders`.
+- `images[].sources`: the absolute URLs of an image's `srcset`, without data URLs; `resources.media`: the URLs of audio, video, their sources and tracks, a `<picture>`'s sources, embeds, and objects, so a mixed-content check reads every address a page loads from the result.
+- `meta.properties`: every `<meta property>` such as `og:title` or `article:published_time` by its lower-cased property.
+- `maxBlockLength`, the size limit of a JSON-LD block, is exported.
+- `bench/parse.mjs` parses a directory of pages with every option on and prints the median per page, for comparing a change against `main`.
+
+### Fixes
+
+- `siteOf` knows `or.at` and `or.jp` as second levels, so `verein.or.at` is the site, not `or.at`, and the links of such a site are `internal`.
+
 ## 0.6.0 (2026-10-13)
 
 ### Features
