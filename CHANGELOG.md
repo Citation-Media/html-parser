@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.0 (2026-10-13)
+
+### Features
+
+- The `regions` option tells a page's own content from its chrome: links, images, headings, forms, and selected elements get the `region` they lie in, `header`, `navigation`, `search`, `sidebar`, `footer`, or `main`, by landmark elements and roles and by the ids and classes widespread WordPress themes, Elementor, Divi, and Bricks give their header, footer, and sidebar. A header, footer, or sidebar inside the main content or an article belongs to it. Links and images also say whether every occurrence lies in the chrome (`chrome`), so links from the content are told from menu and footer links. `regionOf(tag, attributes)` is the markup rule, exported with `chromeRegions`; a `RegionRule` decides in its place.
+- With `markdown` and `regions`, `contentMarkdown` is the Markdown without the chrome, from the same mdream conversion: the parser marks where the chrome begins and ends in mdream's output and splits it there, and `markdown` stays exactly as without `regions`. Measured on 12 pages from 97 KB to 1.9 MB, both together take about as long as one conversion, instead of two.
+- The `markdownExclude` option leaves elements out of the Markdown, with their content: those matching a CSS selector, such as `consentSelectors` or dialogs, and with `hidden`, those that hide their content by the markup or a `HiddenRule`. It shapes only the Markdown, as mdream's own filters do, with the selectors the other options take.
+
 ## 0.8.0 (2026-10-13)
 
 ### Features

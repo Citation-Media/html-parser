@@ -23,6 +23,10 @@ import {
   spotOf,
 } from "./layout.ts";
 import type { Layout, ScreenPosition, Spot } from "./layout.ts";
+import { markdownHooks, splitChrome } from "./markdown.ts";
+import type { MarkdownExclude } from "./markdown.ts";
+import { chromeRegions, enterRegion, outsideRegions } from "./regions.ts";
+import type { Region, RegionRule, RegionScope } from "./regions.ts";
 import { compileSelector, selectorTypes } from "./selector.ts";
 import type { Frame as SelectorFrame, Matcher } from "./selector.ts";
 import {
@@ -43,6 +47,7 @@ import type { LinkKind } from "./urls.ts";
  */
 
 export type { HtmlInput, MarkdownOptions } from "./engine.ts";
+export type { MarkdownExclude } from "./markdown.ts";
 
 export interface Link {
   url: string;
@@ -59,6 +64,10 @@ export interface Link {
   label?: string;
   /** With the `hidden` option: whether every link to this URL is in hidden content. */
   hidden?: boolean;
+  /** With the `regions` option: the region of the first link to this URL, where it lies in one. */
+  region?: Region;
+  /** With the `regions` option: whether every link to this URL lies in the page's chrome. */
+  chrome?: boolean;
 }
 
 export interface Image {
@@ -75,6 +84,10 @@ export interface Image {
   position?: ScreenPosition;
   /** With the `hidden` option: whether every occurrence of this image is in hidden content. */
   hidden?: boolean;
+  /** With the `regions` option: the region of its first occurrence, where it lies in one. */
+  region?: Region;
+  /** With the `regions` option: whether every occurrence lies in the page's chrome. */
+  chrome?: boolean;
 }
 
 export interface Script {
@@ -122,6 +135,8 @@ export interface Heading {
   text: string;
   /** With the `hidden` option: whether the heading is in hidden content. */
   hidden?: boolean;
+  /** With the `regions` option: the region it lies in, where it lies in one. */
+  region?: Region;
 }
 
 /**
@@ -180,6 +195,8 @@ export interface SelectedElement {
   text: string;
   /** With the `hidden` option: whether it is in hidden content. */
   hidden?: boolean;
+  /** With the `regions` option: the region it lies in, where it lies in one. */
+  region?: Region;
 }
 
 export interface FormField {
@@ -207,6 +224,8 @@ export interface Form {
   buttons: string[];
   /** With the `hidden` option: whether the form is in hidden content. */
   hidden?: boolean;
+  /** With the `regions` option: the region it lies in, where it lies in one. */
+  region?: Region;
 }
 
 export interface LinkFilter {
@@ -264,6 +283,20 @@ export interface ParseOptions {
    */
   markdown?: boolean | MarkdownOptions;
   /**
+   * Leaves elements out of the Markdown, with their content: those matching `selector`, such as
+   * `consentSelectors.join(", ")` or `[role='dialog']`, and with `hidden`, those that hide their
+   * content by `hidesContent` or as a `HiddenRule` decides. Shapes only the Markdown.
+   */
+  markdownExclude?: MarkdownExclude;
+  /**
+   * Tells the page's regions apart: header, navigation, search, sidebar, footer, and main content,
+   * by landmark elements and roles and the ids and classes widespread themes and page builders
+   * give them (`regionOf`), or as a `RegionRule` decides. Links, images, headings, forms, and
+   * selected elements get their `region`; with `markdown`, `contentMarkdown` is the Markdown
+   * without the page's chrome, from the same conversion. Read regardless of `context`.
+   */
+  regions?: boolean | RegionRule;
+  /**
    * Elements by CSS selector, as `selected` by the same keys: each match's tag, attributes, and
    * text, at most `maxSelected` per key. The selectors are those `context` takes. Read regardless
    * of `context`.
@@ -302,6 +335,11 @@ export interface ParseResult {
   /** The page's `id`s and `<a name>`s in page order, each once, at most 5,000. */
   ids?: string[];
   markdown?: string;
+  /**
+   * With `markdown` and `regions`: the Markdown without the page's chrome, its header, navigation,
+   * search, sidebar, and footer; the main content and what lies outside every region stay.
+   */
+  contentMarkdown?: string;
   head?: PageHead;
   selected?: Record<string, SelectedElement[]>;
   forms?: Form[];
@@ -423,6 +461,14 @@ const metaFields = new Map<string, Exclude<keyof Meta, "properties">>([
 const clean = (text: string) =>
   collapseWhitespace(removeHyphenation(text)).trim();
 
+/** A heading whose text is still being read. */
+interface OpenHeading {
+  level: number;
+  text: string[];
+  hidden?: boolean;
+  region?: Region;
+}
+
 /** An open element: what the selector reads and what its end tag has to undo. */
 interface Frame extends SelectorFrame {
   /** Elements opened inside it so far, by tag, for `:nth-of-type`. */
@@ -434,7 +480,7 @@ interface Frame extends SelectorFrame {
   hidden: boolean;
   context: boolean;
   link: string[] | undefined;
-  heading: { level: number; text: string[]; hidden?: boolean } | undefined;
+  heading: OpenHeading | undefined;
   title: string[] | undefined;
   /** The text of an inline script that runs, for `inlineCode`. */
   inline: string[] | undefined;
@@ -444,6 +490,8 @@ interface Frame extends SelectorFrame {
   collectors: Collector[] | undefined;
   /** The form it is, for `forms`. */
   form: Form | undefined;
+  /** Where it lies, for `regions`. */
+  regions: RegionScope;
 }
 
 /**
@@ -489,7 +537,7 @@ interface Pass {
   inHiddenText: number;
   inHidden: number;
   link: string[] | undefined;
-  heading: { level: number; text: string[]; hidden?: boolean } | undefined;
+  heading: OpenHeading | undefined;
   title: string[] | undefined;
   titleRead: boolean;
   /** Text of the JSON-LD blocks read so far, and whether the open script is one. */
@@ -500,6 +548,8 @@ interface Pass {
   hydration: HydrationState;
   /** Present with the `hidden` option: the rule that decides what hides its content. */
   hiddenRule: HiddenRule | undefined;
+  /** Present with the `regions` option, with its rule where the caller gave one. */
+  regions: { rule: RegionRule | undefined } | undefined;
   /** Present with the `positions` option. */
   layout: Layout | undefined;
   /** The spots of the images and islands whose position is asked for. */
@@ -534,6 +584,20 @@ interface Pass {
 
 const collecting = (pass: Pass) => pass.inContext > 0;
 
+/** With `regions`: the region an element lies in, and for links and images, whether in the chrome. */
+const regionFields = (pass: Pass, frame: Frame | undefined, chrome = false) => {
+  if (!pass.regions) {
+    return {};
+  }
+  const region = frame?.regions.region;
+  return {
+    ...(region && { region }),
+    ...(chrome && {
+      chrome: region !== undefined && chromeRegions.has(region),
+    }),
+  };
+};
+
 const resolve = (pass: Pass, url: string) => {
   let resolved = pass.urls.get(url);
   if (resolved === undefined) {
@@ -558,6 +622,9 @@ const addLink = (
     // One link in plain sight makes the URL reachable, however many hidden menus repeat it.
     if (existing.hidden && found.hidden === false) {
       existing.hidden = false;
+    }
+    if (existing.chrome && found.chrome === false) {
+      existing.chrome = false;
     }
     return;
   }
@@ -833,10 +900,14 @@ const enterImage = (pass: Pass, attributes: Record<string, string>) => {
   }
   const url = resolve(pass, src);
   const hidden = pass.options.hidden ? pass.inHidden > 0 : undefined;
+  const regions = regionFields(pass, pass.stack.at(-1), true);
   const existing = pass.images.get(url);
   if (existing) {
     if (existing.hidden && hidden === false) {
       existing.hidden = false;
+    }
+    if (existing.chrome && regions.chrome === false) {
+      existing.chrome = false;
     }
     return;
   }
@@ -850,6 +921,7 @@ const enterImage = (pass: Pass, attributes: Record<string, string>) => {
     width: attributes.width,
     ...(srcset && { sources: srcsetUrls(pass, srcset) }),
     ...(hidden !== undefined && { hidden }),
+    ...regions,
   };
   pass.images.set(url, image);
   if (pass.layout) {
@@ -876,6 +948,14 @@ const openFrame = (pass: Pass, node: ElementNode): Frame => {
     name,
     parent,
     position: 1,
+    regions: pass.regions
+      ? enterRegion(
+          name,
+          attributes,
+          parent?.regions ?? outsideRegions,
+          pass.regions.rule
+        ).scope
+      : outsideRegions,
     title: undefined,
     typePosition: 1,
     types: undefined,
@@ -941,6 +1021,7 @@ const enterHeading = (pass: Pass, frame: Frame) => {
     level,
     text: [],
     ...(pass.options.hidden && { hidden: pass.inHidden > 0 }),
+    ...regionFields(pass, frame),
   };
   pass.heading = frame.heading;
 };
@@ -1027,6 +1108,7 @@ const enterSelected = (pass: Pass, frame: Frame, selectors: Selectors) => {
         tag: frame.name,
         text: "",
         ...(pass.hiddenRule && { hidden: pass.inHidden > 0 }),
+        ...regionFields(pass, frame),
       };
       list.push(element);
       collect(pass, frame, (content) => {
@@ -1057,6 +1139,7 @@ const enterForm = (pass: Pass, frame: Frame) => {
     ...(id && { id }),
     ...(name && { name }),
     ...(pass.hiddenRule && { hidden: frame.hidden || pass.inHidden > 0 }),
+    ...regionFields(pass, frame),
   };
   pass.forms.push(form);
   pass.form = form;
@@ -1269,6 +1352,7 @@ const leaveLink = (pass: Pass, frame: Frame, text: string[]) => {
       text: clean(text.join("")),
       url: resolve(pass, href),
       ...(pass.options.hidden && { hidden: frame.hidden || pass.inHidden > 0 }),
+      ...regionFields(pass, frame, true),
     },
     pass.base
   );
@@ -1282,6 +1366,7 @@ const leaveHeading = (pass: Pass, heading: NonNullable<Frame["heading"]>) => {
       level: heading.level,
       text,
       ...(heading.hidden !== undefined && { hidden: heading.hidden }),
+      ...(heading.region && { region: heading.region }),
     });
   }
   pass.heading = undefined;
@@ -1431,6 +1516,9 @@ const hiddenRuleOf = (hidden: ParseOptions["hidden"]) => {
   return hidden || undefined;
 };
 
+const regionsOf = (regions: ParseOptions["regions"]) =>
+  regions ? { rule: regions === true ? undefined : regions } : undefined;
+
 const textLimitOf = (limit: ParseOptions["text"]) =>
   limit && limit !== true
     ? (limit.maxLength ?? defaultTextLength)
@@ -1487,6 +1575,7 @@ const newPass = (options: ParseOptions): Pass => {
     options,
     readingJsonLd: false,
     readingStyle: false,
+    regions: regionsOf(options.regions),
     resources: { frames: [], links: [], media: [], scripts: [] },
     selected: {},
     selectors: selectorsOf(options.select),
@@ -1513,7 +1602,21 @@ const addElements = (pass: Pass, result: ParseResult) => {
   }
 };
 
-const resultOf = (pass: Pass, markdown: string | undefined): ParseResult => {
+/** The Markdown of a conversion; with `regions`, also without the page's chrome. */
+type Converted = Pick<ParseResult, "contentMarkdown" | "markdown">;
+
+const convertedOf = (pass: Pass, marked: string | undefined): Converted => {
+  if (marked === undefined) {
+    return {};
+  }
+  if (!pass.regions) {
+    return { markdown: marked };
+  }
+  const { content, whole } = splitChrome(marked);
+  return { contentMarkdown: content, markdown: whole };
+};
+
+const resultOf = (pass: Pass, converted: Converted): ParseResult => {
   const { options } = pass;
   // Elements still open at the end, which the tokenizer normally closes, end here.
   for (let frame = pass.stack.pop(); frame; frame = pass.stack.pop()) {
@@ -1563,9 +1666,7 @@ const resultOf = (pass: Pass, markdown: string | undefined): ParseResult => {
   if (options.ids) {
     result.ids = [...pass.ids];
   }
-  if (markdown !== undefined) {
-    result.markdown = markdown;
-  }
+  Object.assign(result, converted);
   if (options.head) {
     result.head = readHead(
       pass.headElements,
@@ -1590,10 +1691,17 @@ const markdownOptions = (
   if (!markdown) {
     return undefined;
   }
-  if (markdown === true) {
-    return { origin: base.origin };
-  }
-  return { origin: base.origin, ...markdown };
+  const own = markdown === true ? {} : markdown;
+  const hooks = markdownHooks(
+    own.hooks,
+    options.markdownExclude,
+    options.regions || undefined
+  );
+  return {
+    origin: base.origin,
+    ...own,
+    ...(hooks.length > 0 && { hooks }),
+  };
 };
 
 /** Whether a context was asked for but matched nothing, so the whole page has to count. */
@@ -1617,15 +1725,14 @@ export const parseHtmlSync = (
   const pass = newPass(options);
   scanText(html, handlersOf(pass));
   const converter = markdownOptions(options, pass.base);
-  const markdown = converter ? markdownOf(html, converter) : undefined;
+  const converted = convertedOf(
+    pass,
+    converter ? markdownOf(html, converter) : undefined
+  );
   if (!missedContext(pass)) {
-    return resultOf(pass, markdown);
+    return resultOf(pass, converted);
   }
-  const whole = parseHtmlSync(html, withoutContext(options));
-  if (markdown !== undefined) {
-    whole.markdown = markdown;
-  }
-  return whole;
+  return Object.assign(parseHtmlSync(html, withoutContext(options)), converted);
 };
 
 /**
@@ -1642,18 +1749,20 @@ export const parseHtml = async (
   const pass = newPass(options);
   // A stream can be read once, so a context that may match nothing keeps the text for a second pass.
   const kept: string[] | undefined = options.context ? [] : undefined;
-  const markdown = await scanStream(
-    input,
-    handlersOf(pass),
-    markdownOptions(options, pass.base),
-    kept
+  const converted = convertedOf(
+    pass,
+    await scanStream(
+      input,
+      handlersOf(pass),
+      markdownOptions(options, pass.base),
+      kept
+    )
   );
   if (!kept || !missedContext(pass)) {
-    return resultOf(pass, markdown);
+    return resultOf(pass, converted);
   }
-  const whole = parseHtmlSync(kept.join(""), withoutContext(options));
-  if (markdown !== undefined) {
-    whole.markdown = markdown;
-  }
-  return whole;
+  return Object.assign(
+    parseHtmlSync(kept.join(""), withoutContext(options)),
+    converted
+  );
 };

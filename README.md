@@ -46,6 +46,8 @@ const { links, images, meta } = await parseHtml(response, {
 | `ids` | The targets a fragment link such as `#team` can point to: every element's `id` and each `<a>`'s `name`, in page order, each once, at most 5,000. Read regardless of `context`. Compare them with the `anchor` links of the same page, or the fragments of internal links to it, to find links that lead nowhere. |
 | `markdown` | The page as Markdown, written by mdream from the same input: `true` for mdream's defaults with the page's origin, or mdream's options, such as `{ plugins: { filter: { exclude: ["nav"] }, isolateMain: true } }`. mdream's filters shape only the Markdown, never what the other options collect. |
 | `head` | The `<head>` as [unhead](https://unhead.unjs.io/) validates it, see [Head](#head). Read regardless of `context`. |
+| `regions` | Tells the page's regions apart, see [Regions](#regions): links, images, headings, forms, and selected elements get the `region` they lie in, `header`, `navigation`, `search`, `sidebar`, `footer`, or `main`; links and images also `chrome`, whether every occurrence lies in the page's chrome. With `markdown`, `contentMarkdown` is the Markdown without the chrome, from the same conversion. `true` for what the markup states, or a rule `(tag, attributes, byMarkup) => region` that decides given it. Read regardless of `context`. |
+| `markdownExclude` | Leaves elements out of the Markdown, with their content: `selector`, a CSS selector as `context` takes, such as `consentSelectors.join(", ")` or `"[role='dialog']"`, and `hidden`, `true` for what [hides its content](#hidden-content) by the markup, or a rule as for `hidden`. Shapes only the Markdown. |
 | `select` | Elements by CSS selector, as `selected` under the same keys: `{ addresses: "address", times: "time[datetime]" }` gives each match's `tag`, `attributes`, and `text` (as `textContent`, without scripts and styles, cut at 2,000 characters), at most 200 per key, in page order; with `hidden`, whether it is in hidden content. The selectors are those `context` takes. Read regardless of `context`. |
 | `forms` | The page's forms: `action` (absolute; the page's own address where the form names none), `method` (`get`, `post`, or `dialog`), `id` and `name`, `fields` with their `tag`, `type` (lower-cased, `text` by default), `name`, `id`, `autocomplete`, `placeholder`, `required`, and `label` (the `<label>` by `for` or wrapping it, else `aria-label`), and `buttons`, the texts of its buttons. Fields outside a `<form>` are not read; with `hidden`, a form says whether it is in hidden content. |
 
@@ -60,6 +62,37 @@ With `hidden`, each link, image, and heading says whether it stands in content t
 A rule in place of `true` decides for each element, given what the markup says: `(tag, attributes, byMarkup) => byMarkup && !attributes.class?.includes("popup")` keeps popups, which may hold an imprint, and `(tag, attributes, byMarkup) => byMarkup || /\bsr-only\b/.test(attributes.class ?? "")` hides screen-reader-only text as well. With `positions`, the same decision tells which containers hide their content, besides the classes the estimate reads on its own.
 
 A link or image that the page repeats is hidden only when every occurrence is: a logo in a closed menu and in the header is in plain sight. Headings are listed in page order, hidden ones included, so a heading outline can skip or show them. `<noscript>` content is text to the tokenizer and is never collected.
+
+## Regions
+
+With `regions`, the parser tells a page's own content from its chrome, the header, navigation, search, sidebar, and footer that every page of a site repeats around it. `regionOf(tag, attributes)`, exported, reads an element's region from its markup:
+
+| Region | Landmark element | Role | Theme and page-builder markers on a container |
+| --- | --- | --- | --- |
+| `header` | `<header>` | `banner` | ids `masthead`, `site-header`, `main-header`, `brx-header`, `header`; classes `site-header`, `elementor-location-header`, `et-l--header`; `data-elementor-type="header"` |
+| `navigation` | `<nav>` | `navigation` |  |
+| `search` | `<search>` | `search` |  |
+| `sidebar` | `<aside>` | `complementary` | ids `sidebar`, `secondary`; class `widget-area` |
+| `footer` | `<footer>` | `contentinfo` | ids `colophon`, `site-footer`, `main-footer`, `brx-footer`, `footer`; classes `site-footer`, `elementor-location-footer`, `et-l--footer`; `data-elementor-type="footer"` |
+| `main` | `<main>` | `main` |  |
+
+A role decides over the element, and `role="none"` or `presentation` opens no region. The markers are those of WordPress themes such as Twenty Twenty-Five, Astra, GeneratePress, and Kadence, and of Elementor, Divi, and Bricks, and they count on `div`, `section`, `header`, `footer`, `aside`, and `nav` only, not on a heading or link that happens to carry such an id. As in HTML's own landmark rules, a header, footer, or sidebar inside the main content or an `<article>` belongs to it, such as an article's byline or a post's related links; navigation and search count wherever they are. An element lies in the innermost region around it; content outside every region, on a page without landmarks, has none.
+
+A rule in place of `true` decides for each element, given what the markup says: `(tag, attributes, byMarkup) => attributes.id === "top" ? "header" : byMarkup` adds a theme's own header, and returning `undefined` for an element drops a region the markup states. `chromeRegions` lists the regions that count as chrome.
+
+A link or image that the page repeats has the `region` of its first occurrence, and `chrome` is `true` only when every occurrence lies in the chrome: a page linked from the main menu and from a paragraph is linked from the content.
+
+```ts
+const { contentMarkdown, links } = await parseHtml(response, {
+  url,
+  links: { kinds: ["internal"] },
+  markdown: true,
+  regions: true,
+});
+const fromContent = links.filter((link) => !link.chrome);
+```
+
+`contentMarkdown` is the Markdown without the chrome; the main content and what lies outside every region stay. It comes from the same conversion as `markdown`, which stays as without `regions`: the parser marks where the chrome begins and ends in mdream's output and splits it there. A theme that writes its header into the main content, without a landmark or marker, keeps it there; such a theme needs a rule.
 
 ## One Pass For Several Needs
 
@@ -204,7 +237,7 @@ const html = await cleanHtml(page, {
 
 ## Markdown
 
-The Markdown itself is mdream's: the `markdown` option hands it the page with your options. To convert with mdream's WebAssembly engine, the `mdream` package, call it on the same text yourself.
+The Markdown itself is mdream's: the `markdown` option hands it the page with your options, your own `hooks` first. `markdownExclude` and `regions` add hooks of their own, which skip what `markdownExclude` names and mark the chrome; what your hooks skip stays skipped. To convert with mdream's WebAssembly engine, the `mdream` package, call it on the same text yourself.
 
 ## Limits
 

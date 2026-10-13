@@ -27,6 +27,7 @@ export type {
   InlineCode,
   Link,
   LinkFilter,
+  MarkdownExclude,
   MarkdownOptions,
   Meta,
   ParseOptions,
@@ -37,6 +38,8 @@ export type {
   SelectedElement,
   VisibleText,
 } from "./parse.ts";
+export { chromeRegions, regionOf } from "./regions.ts";
+export type { Region, RegionRule } from "./regions.ts";
 export { maxBlockLength, readStructuredData } from "./structured-data.ts";
 export { readDeclarations, readStyles } from "./styles.ts";
 export type {
