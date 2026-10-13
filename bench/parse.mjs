@@ -39,7 +39,7 @@ let total = 0;
 for (const file of readdirSync(directory)
   .filter((name) => name.endsWith(".html"))
   .toSorted()) {
-  const html = readFileSync(join(directory, file), "utf-8");
+  const html = readFileSync(path.join(directory, file), "utf-8");
   for (let run = 0; run < 3; run += 1) {
     parseHtmlSync(html, options);
   }
