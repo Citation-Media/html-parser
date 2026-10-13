@@ -18,6 +18,8 @@ export { hiddenFromReaders, hidesContent } from "./layout.ts";
 export type { ScreenPosition } from "./layout.ts";
 export { parseHtml, parseHtmlSync } from "./parse.ts";
 export type {
+  Form,
+  FormField,
   Heading,
   HiddenRule,
   HtmlInput,
@@ -32,6 +34,7 @@ export type {
   ParseResult,
   Resources,
   Script,
+  SelectedElement,
   VisibleText,
 } from "./parse.ts";
 export { maxBlockLength, readStructuredData } from "./structured-data.ts";

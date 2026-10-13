@@ -23,7 +23,7 @@ import {
   spotOf,
 } from "./layout.ts";
 import type { Layout, ScreenPosition, Spot } from "./layout.ts";
-import { compileSelector } from "./selector.ts";
+import { compileSelector, selectorTypes } from "./selector.ts";
 import type { Frame as SelectorFrame, Matcher } from "./selector.ts";
 import {
   maxBlockLength,
@@ -172,6 +172,43 @@ export interface InlineCode {
   formActions: string[];
 }
 
+/** An element the `select` option asked for. */
+export interface SelectedElement {
+  tag: string;
+  attributes: Record<string, string>;
+  /** Its text as a DOM's `textContent`, without scripts and styles, cut at `maxSelectedText`. */
+  text: string;
+  /** With the `hidden` option: whether it is in hidden content. */
+  hidden?: boolean;
+}
+
+export interface FormField {
+  tag: "input" | "select" | "textarea";
+  /** The input's `type`, lower-cased, `text` by default; `select` and `textarea` for those. */
+  type: string;
+  name?: string;
+  id?: string;
+  autocomplete?: string;
+  placeholder?: string;
+  required: boolean;
+  /** The text of its `<label>`, by `for` or wrapping it, or its `aria-label`. */
+  label?: string;
+}
+
+export interface Form {
+  /** Where it sends to, absolute; the page's own address where it names none. */
+  action: string;
+  method: "dialog" | "get" | "post";
+  id?: string;
+  name?: string;
+  /** Its fields in page order, without buttons, at most `maxFields`. */
+  fields: FormField[];
+  /** The texts of its buttons: a `<button>`'s text, a submit or button input's `value`. */
+  buttons: string[];
+  /** With the `hidden` option: whether the form is in hidden content. */
+  hidden?: boolean;
+}
+
 export interface LinkFilter {
   /** Kinds to keep; all when not set. */
   kinds?: LinkKind[];
@@ -227,6 +264,18 @@ export interface ParseOptions {
    */
   markdown?: boolean | MarkdownOptions;
   /**
+   * Elements by CSS selector, as `selected` by the same keys: each match's tag, attributes, and
+   * text, at most `maxSelected` per key. The selectors are those `context` takes. Read regardless
+   * of `context`.
+   */
+  select?: Record<string, string>;
+  /**
+   * The page's forms, as `forms`: where each sends to, its method, its fields with their type,
+   * name, autocomplete, placeholder, whether they are required, and their label, and the texts of
+   * its buttons. Fields outside a `<form>` are not read.
+   */
+  forms?: boolean;
+  /**
    * The `<head>` as unhead validates it, as `head`: its elements in page order with Capo's weight,
    * and the issues unhead's rules find, such as render-blocking scripts or too many preloads. An
    * object passes unhead's rule configuration. Read regardless of `context`.
@@ -254,6 +303,8 @@ export interface ParseResult {
   ids?: string[];
   markdown?: string;
   head?: PageHead;
+  selected?: Record<string, SelectedElement[]>;
+  forms?: Form[];
 }
 
 const maxHeadings = 200;
@@ -264,6 +315,11 @@ const maxResources = 500;
 const maxIds = 5000;
 const maxSources = 20;
 const maxProperties = 50;
+const maxSelected = 200;
+const maxSelectedText = 2000;
+const maxForms = 50;
+const maxFields = 100;
+const maxButtonText = 200;
 const defaultTextLength = 100_000;
 
 // The type may carry parameters, such as `application/ld+json; charset=utf-8`.
@@ -384,6 +440,28 @@ interface Frame extends SelectorFrame {
   inline: string[] | undefined;
   /** The head element it is, for `head`. */
   headElement: OpenHeadElement | undefined;
+  /** Texts collected inside it: of selected elements, labels, and buttons. */
+  collectors: Collector[] | undefined;
+  /** The form it is, for `forms`. */
+  form: Form | undefined;
+}
+
+/**
+ * The `select` option compiled: selectors that name their element types, by type, so only those
+ * elements are tested, and the others, tested on every element.
+ */
+interface Selectors {
+  keys: string[];
+  byType: Map<string, [string, Matcher][]>;
+  any: [string, Matcher][];
+}
+
+/** Text collected for a selected element, a label, or a button, finished at the end tag. */
+interface Collector {
+  parts: string[];
+  finish: (text: string) => void;
+  /** The fields a label wraps, for `forms`; only a label's collector has them. */
+  fields?: FormField[];
 }
 
 /** What the handlers of one pass share while the page streams through. */
@@ -440,6 +518,18 @@ interface Pass {
   headElements: OpenHeadElement[];
   /** The fragment targets read so far, for `ids`. */
   ids: Set<string>;
+  /** The compiled selectors of `select` and the matches so far. */
+  selectors: Selectors | undefined;
+  selected: Record<string, SelectedElement[]>;
+  /** Open collectors, innermost last; text goes to all of them. */
+  collectors: Collector[];
+  forms: Form[];
+  /** The open form, for its fields and buttons. */
+  form: Form | undefined;
+  /** Label texts by the `for` id, for fields read before or after their label. */
+  labels: Map<string, string>;
+  /** Fields whose label may still come, by id. */
+  unlabelled: Map<string, FormField[]>;
 }
 
 const collecting = (pass: Pass) => pass.inContext > 0;
@@ -774,8 +864,10 @@ const openFrame = (pass: Pass, node: ElementNode): Frame => {
   const frame: Frame = {
     attributes,
     children: 0,
+    collectors: undefined,
     containers: undefined,
     context: false,
+    form: undefined,
     headElement: undefined,
     heading: undefined,
     hidden: false,
@@ -788,7 +880,7 @@ const openFrame = (pass: Pass, node: ElementNode): Frame => {
     typePosition: 1,
     types: undefined,
   };
-  if (pass.matcher && parent) {
+  if ((pass.matcher || pass.selectors) && parent) {
     parent.children += 1;
     frame.position = parent.children;
     parent.types ??= new Map();
@@ -909,6 +1001,173 @@ const enterIsland = (pass: Pass, frame: Frame) => {
 
 const headingTags = new Set(["h1", "h2", "h3", "h4", "h5", "h6"]);
 
+/** Starts collecting the text inside the element; `finish` gets it at the end tag. */
+const collect = (
+  pass: Pass,
+  frame: Frame,
+  finish: Collector["finish"]
+): Collector => {
+  const collector: Collector = { finish, parts: [] };
+  frame.collectors ??= [];
+  frame.collectors.push(collector);
+  pass.collectors.push(collector);
+  return collector;
+};
+
+const enterSelected = (pass: Pass, frame: Frame, selectors: Selectors) => {
+  const candidates = selectors.byType.get(frame.name);
+  for (const [key, matches] of candidates
+    ? [...candidates, ...selectors.any]
+    : selectors.any) {
+    pass.selected[key] ??= [];
+    const list = pass.selected[key];
+    if (list.length < maxSelected && matches(frame)) {
+      const element: SelectedElement = {
+        attributes: frame.attributes,
+        tag: frame.name,
+        text: "",
+        ...(pass.hiddenRule && { hidden: pass.inHidden > 0 }),
+      };
+      list.push(element);
+      collect(pass, frame, (content) => {
+        element.text = content.slice(0, maxSelectedText);
+      });
+    }
+  }
+};
+
+const buttonTypes = new Set(["button", "image", "reset", "submit"]);
+
+const formMethod = (method: string | undefined): Form["method"] => {
+  const lower = (method ?? "").trim().toLowerCase();
+  return lower === "post" || lower === "dialog" ? lower : "get";
+};
+
+const enterForm = (pass: Pass, frame: Frame) => {
+  const { attributes } = frame;
+  if (pass.form || pass.forms.length >= maxForms || !collecting(pass)) {
+    return;
+  }
+  const { action, id, name } = attributes;
+  const form: Form = {
+    action: action?.trim() ? resolve(pass, action) : pass.base.href,
+    buttons: [],
+    fields: [],
+    method: formMethod(attributes.method),
+    ...(id && { id }),
+    ...(name && { name }),
+    ...(pass.hiddenRule && { hidden: frame.hidden || pass.inHidden > 0 }),
+  };
+  pass.forms.push(form);
+  pass.form = form;
+  frame.form = form;
+};
+
+const addButton = (form: Form, text: string) => {
+  const cleaned = clean(text).slice(0, maxButtonText);
+  if (cleaned) {
+    form.buttons.push(cleaned);
+  }
+};
+
+const fieldTagOf = new Map<string, FormField["tag"]>([
+  ["input", "input"],
+  ["select", "select"],
+  ["textarea", "textarea"],
+]);
+
+const fieldTags = new Set(["button", "input", "select", "textarea"]);
+
+const fieldOf = (
+  tag: FormField["tag"],
+  type: string,
+  attributes: Record<string, string>
+): FormField => {
+  const { autocomplete, id, name, placeholder } = attributes;
+  const label = attributes["aria-label"];
+  return {
+    required: "required" in attributes,
+    tag,
+    type,
+    ...(name && { name }),
+    ...(id && { id }),
+    ...(autocomplete && { autocomplete }),
+    ...(placeholder && { placeholder: clean(placeholder) }),
+    ...(label && { label: clean(label) }),
+  };
+};
+
+/** Names the field by a label read already, or waits for one by its `for`. */
+const labelField = (pass: Pass, field: FormField) => {
+  // A wrapping label names the field by its text; a label elsewhere by `for`.
+  const wrapping = pass.collectors.findLast((collector) => collector.fields);
+  wrapping?.fields?.push(field);
+  const { id } = field;
+  if (!id || field.label) {
+    return;
+  }
+  const known = pass.labels.get(id);
+  if (known) {
+    field.label = known;
+  } else {
+    pass.unlabelled.set(id, [...(pass.unlabelled.get(id) ?? []), field]);
+  }
+};
+
+/** A field, or a button, inside the open form. */
+const enterField = (pass: Pass, frame: Frame) => {
+  const { form } = pass;
+  if (!form) {
+    return;
+  }
+  const { attributes, name } = frame;
+  if (name === "button") {
+    collect(pass, frame, (content) =>
+      addButton(form, content || attributes.value || "")
+    );
+    return;
+  }
+  const tag = fieldTagOf.get(name);
+  if (!tag) {
+    return;
+  }
+  const type =
+    tag === "input"
+      ? (attributes.type ?? "").trim().toLowerCase() || "text"
+      : tag;
+  if (tag === "input" && buttonTypes.has(type)) {
+    addButton(form, attributes.value ?? attributes.alt ?? "");
+    return;
+  }
+  if (form.fields.length >= maxFields) {
+    return;
+  }
+  const field = fieldOf(tag, type, attributes);
+  form.fields.push(field);
+  labelField(pass, field);
+};
+
+const enterLabel = (pass: Pass, frame: Frame) => {
+  const { for: target } = frame.attributes;
+  const fields: FormField[] = [];
+  const collector = collect(pass, frame, (content) => {
+    if (!content) {
+      return;
+    }
+    for (const field of fields) {
+      field.label ??= content;
+    }
+    if (target) {
+      pass.labels.set(target, content);
+      for (const field of pass.unlabelled.get(target) ?? []) {
+        field.label ??= content;
+      }
+      pass.unlabelled.delete(target);
+    }
+  });
+  collector.fields = fields;
+};
+
 /** What the element's own tag asks for. */
 const enterTag = (pass: Pass, frame: Frame) => {
   const { options } = pass;
@@ -929,6 +1188,15 @@ const enterTag = (pass: Pass, frame: Frame) => {
   } else if (name === "astro-island" && options.hydration) {
     enterIsland(pass, frame);
   }
+  if (options.forms) {
+    if (name === "form") {
+      enterForm(pass, frame);
+    } else if (fieldTags.has(name)) {
+      enterField(pass, frame);
+    } else if (name === "label") {
+      enterLabel(pass, frame);
+    }
+  }
 };
 
 const enter = (pass: Pass, node: ElementNode) => {
@@ -940,6 +1208,9 @@ const enter = (pass: Pass, node: ElementNode) => {
     countClasses(pass, attributes);
   }
   enterTag(pass, frame);
+  if (pass.selectors) {
+    enterSelected(pass, frame, pass.selectors);
+  }
   if (options.meta) {
     enterMeta(pass, frame, name, attributes);
   }
@@ -1031,6 +1302,15 @@ const leaveScript = (pass: Pass, frame: Frame) => {
 
 const leave = (pass: Pass, frame: Frame) => {
   leaveStructure(pass, frame);
+  if (frame.collectors) {
+    for (const collector of frame.collectors) {
+      collector.finish(clean(collector.parts.join("")));
+    }
+    pass.collectors.length -= frame.collectors.length;
+  }
+  if (frame.form) {
+    pass.form = undefined;
+  }
   if (frame.link) {
     leaveLink(pass, frame, frame.link);
   }
@@ -1098,6 +1378,11 @@ const text = (pass: Pass, value: string) => {
   if (pass.layout) {
     readText(pass.layout, value);
   }
+  if (pass.collectors.length > 0 && pass.inHiddenText === 0) {
+    for (const collector of pass.collectors) {
+      collector.parts.push(value);
+    }
+  }
   if (!collecting(pass)) {
     return;
   }
@@ -1117,6 +1402,28 @@ const handlersOf = (pass: Pass): Handlers => ({
 /** What the markup says, unless the caller's rule decides. */
 const byMarkupRule: HiddenRule = (_tag, _attributes, byMarkup) => byMarkup;
 
+const selectorsOf = (select: ParseOptions["select"]): Selectors | undefined => {
+  if (!select) {
+    return undefined;
+  }
+  const selectors: Selectors = { any: [], byType: new Map(), keys: [] };
+  for (const [key, selector] of Object.entries(select)) {
+    selectors.keys.push(key);
+    const entry: [string, Matcher] = [key, compileSelector(selector)];
+    const types = selectorTypes(selector);
+    if (!types) {
+      selectors.any.push(entry);
+      continue;
+    }
+    for (const type of types) {
+      const list = selectors.byType.get(type) ?? [];
+      list.push(entry);
+      selectors.byType.set(type, list);
+    }
+  }
+  return selectors;
+};
+
 const hiddenRuleOf = (hidden: ParseOptions["hidden"]) => {
   if (hidden === true) {
     return byMarkupRule;
@@ -1124,18 +1431,30 @@ const hiddenRuleOf = (hidden: ParseOptions["hidden"]) => {
   return hidden || undefined;
 };
 
+const textLimitOf = (limit: ParseOptions["text"]) =>
+  limit && limit !== true
+    ? (limit.maxLength ?? defaultTextLength)
+    : defaultTextLength;
+
+const matcherOf = (context: ParseOptions["context"]) =>
+  context ? compileSelector(context) : undefined;
+
+const initialClassCounts = (prefixes: ParseOptions["classPrefixes"]) =>
+  Object.fromEntries((prefixes ?? []).map((prefix) => [prefix, 0]));
+
+const linkFilterOf = (links: ParseOptions["links"]) =>
+  links === true ? {} : links || undefined;
+
 const newPass = (options: ParseOptions): Pass => {
-  const max =
-    options.text && options.text !== true
-      ? (options.text.maxLength ?? defaultTextLength)
-      : defaultTextLength;
+  const max = textLimitOf(options.text);
   return {
     base: new URL(options.url),
-    classCounts: Object.fromEntries(
-      (options.classPrefixes ?? []).map((prefix) => [prefix, 0])
-    ),
+    classCounts: initialClassCounts(options.classPrefixes),
+    collectors: [],
     contextFound: false,
+    form: undefined,
     formActions: new Set(),
+    forms: [],
     headElements: [],
     heading: undefined,
     headingCounts: [0, 0, 0, 0, 0, 0],
@@ -1158,24 +1477,40 @@ const newPass = (options: ParseOptions): Pass => {
       styleElements: 0,
     },
     jsonLd: [],
+    labels: new Map(),
     layout: options.positions ? emptyLayout() : undefined,
     link: undefined,
-    linkFilter: options.links === true ? {} : options.links || undefined,
+    linkFilter: linkFilterOf(options.links),
     links: new Map(),
-    matcher: options.context ? compileSelector(options.context) : undefined,
+    matcher: matcherOf(options.context),
     meta: {},
     options,
     readingJsonLd: false,
     readingStyle: false,
     resources: { frames: [], links: [], media: [], scripts: [] },
+    selected: {},
+    selectors: selectorsOf(options.select),
     spots: new Map(),
     stack: [],
     styles: { attributes: [], blocks: [], stylesheets: [] },
     text: { at: false, kept: 0, length: 0, max, parts: [], space: false },
     title: undefined,
     titleRead: false,
+    unlabelled: new Map(),
     urls: new Map(),
   };
+};
+
+/** The elements asked for by `select` and `forms`. */
+const addElements = (pass: Pass, result: ParseResult) => {
+  if (pass.selectors) {
+    result.selected = Object.fromEntries(
+      pass.selectors.keys.map((key) => [key, pass.selected[key] ?? []])
+    );
+  }
+  if (pass.options.forms) {
+    result.forms = pass.forms;
+  }
 };
 
 const resultOf = (pass: Pass, markdown: string | undefined): ParseResult => {
@@ -1237,6 +1572,7 @@ const resultOf = (pass: Pass, markdown: string | undefined): ParseResult => {
       options.head === true ? {} : options.head
     );
   }
+  addElements(pass, result);
   const { layout } = pass;
   if (layout) {
     for (const [item, spot] of pass.spots) {

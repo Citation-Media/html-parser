@@ -387,6 +387,24 @@ const matchesSteps = (steps: Step[], last: number, frame: Frame): boolean => {
   return false;
 };
 
+/**
+ * The element types a selector list can match, when every selector of the list names one in its
+ * last compound, such as `address` and `time` for `address, p > time[datetime]`; `undefined` when
+ * one selector matches any type, such as `.cta` or `*`. Lets a caller test only those elements.
+ */
+export const selectorTypes = (selector: string): Set<string> | undefined => {
+  const types = new Set<string>();
+  for (const part of splitTop(selector, ",")) {
+    const last = tokens(part.trim()).at(-1) ?? "";
+    const [type] = /^[a-z][\w-]*/iu.exec(last) ?? [];
+    if (!type) {
+      return undefined;
+    }
+    types.add(type.toLowerCase());
+  }
+  return types;
+};
+
 /** Compiles a selector list; throws a `SyntaxError` for what it cannot match in one pass. */
 export const compileSelector = (selector: string): Matcher => {
   const list = splitTop(selector, ",").map((part) =>
