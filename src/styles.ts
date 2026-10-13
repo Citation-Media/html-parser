@@ -177,6 +177,14 @@ export const readDeclarations = (css: string, origin: string): ReadCss => {
       index = end === -1 ? css.length : end + 2;
       continue;
     }
+    // An escaped character, such as the quote, bracket, or colon in Tailwind's
+    // `.content-\[\'\/\/\'\]` or `.w-\[calc\(100\%\)\]`, is part of the selector: it opens
+    // no string, block, or parenthesis.
+    if (char === "\\") {
+      buffer += css.slice(index, index + 2);
+      index += 2;
+      continue;
+    }
     if (char === '"' || char === "'") {
       const end = afterString(css, index);
       buffer += css.slice(index, end);

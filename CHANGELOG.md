@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1 (2026-10-13)
+
+### Fixes
+
+- `readDeclarations` and `readStyles` read past escaped characters outside strings. An escaped quote in a selector, such as Tailwind's `.before\:content-\[\'\/\/_\'\]`, no longer opens a string that swallows the rest of the stylesheet, and an escaped brace or parenthesis no longer opens a block. On Tailwind sites with such classes, the custom properties and colours after them, often the whole `:root` palette, were missing from the style map.
+
 ## 0.5.0 (2026-10-09)
 
 ### Features

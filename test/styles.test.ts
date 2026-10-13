@@ -82,6 +82,27 @@ describe("reading CSS", () => {
       ["font-weight", "400", "@font-face", ["@font-face"]],
     ]);
   });
+
+  test("reads past escaped quotes, brackets, and braces in selectors", () => {
+    // Tailwind writes arbitrary values into class names, such as `content-['//_']`.
+    const { declarations } = readDeclarations(
+      `@layer utilities {
+         .before\\:content-\\[\\'\\/\\/_\\'\\]:before { --tw-content: "// " }
+         .w-\\[calc\\(100\\%-1rem\\)\\] { width: calc(100% - 1rem) }
+         .a\\{b\\} { color: red }
+       }
+       :root { --primary: #166fae }`,
+      "site.css"
+    );
+    expect(
+      declarations.map(({ property, selector }) => [property, selector])
+    ).toEqual([
+      ["--tw-content", ".before\\:content-\\[\\'\\/\\/_\\'\\]:before"],
+      ["width", ".w-\\[calc\\(100\\%-1rem\\)\\]"],
+      ["color", ".a\\{b\\}"],
+      ["--primary", ":root"],
+    ]);
+  });
 });
 
 describe("style map", () => {
