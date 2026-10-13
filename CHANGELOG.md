@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.0 (2026-10-13)
+
+### Features
+
+- The `select` option returns elements by CSS selector, as `selected` under the caller's keys: each match's tag, attributes, and text, at most 200 per key, read regardless of `context`. One pass answers questions a caller would otherwise regex the HTML for, such as `<address>` elements, `<time datetime>`, or links with `data-*` attributes. The selectors are those `context` takes.
+- The `forms` option reads the page's forms: where each sends to, its method, its fields with type, name, autocomplete, placeholder, whether they are required, and their label by `for`, wrapping, or `aria-label`, and the texts of its buttons.
+
 ## 0.7.0 (2026-10-13)
 
 ### Features
