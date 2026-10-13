@@ -103,6 +103,21 @@ describe("reading CSS", () => {
       ["--primary", ":root"],
     ]);
   });
+
+  test("reads past a lone escaped parenthesis in a selector", () => {
+    // Unbalanced, so a reader that counted it would not even out further on.
+    const { declarations } = readDeclarations(
+      `.a\\( { color: red }
+       :root { --primary: #166fae }`,
+      "site.css"
+    );
+    expect(
+      declarations.map(({ property, selector }) => [property, selector])
+    ).toEqual([
+      ["color", ".a\\("],
+      ["--primary", ":root"],
+    ]);
+  });
 });
 
 describe("style map", () => {
