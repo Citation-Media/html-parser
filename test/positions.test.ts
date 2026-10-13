@@ -30,6 +30,24 @@ const positions = async (html: string) => {
   ]);
 };
 
+describe("hidden from readers", () => {
+  test("takes aria-hidden and inert content as hidden, but not the main landmark", async () => {
+    expect(
+      await positions(`<body>
+        <main aria-hidden="true"><h1>Kontakt</h1><img src="hero.jpg" alt=""></main>
+        <div class="slides"><div aria-hidden="true"><img src="clone.jpg" alt=""></div></div>
+        <section inert><img src="inert.jpg" alt=""></section>
+        <footer aria-hidden="true"><img src="logo.svg" alt=""></footer>
+        ${prose(3000)}</body>`)
+    ).toEqual({
+      "clone.jpg": "hidden",
+      "hero.jpg": "first-screen",
+      "inert.jpg": "hidden",
+      "logo.svg": "hidden",
+    });
+  });
+});
+
 describe("first screen", () => {
   test("places the header logo in the first screen and leaves a hero after it unknown", async () => {
     expect(

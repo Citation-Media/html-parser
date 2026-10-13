@@ -106,7 +106,7 @@ With `positions`, each image and Astro island gets a `position`: where it is exp
 
 | `position` | When |
 | --- | --- |
-| `hidden` | Inside an element the markup hides: `hidden`, `display: none` or `visibility: hidden` in its `style`, a `<dialog>` without `open`, a template, or classes such as `modal`, `drawer`, `offcanvas`, `popover`, `tooltip`, `sr-only`, or `screen-reader-text`. |
+| `hidden` | Inside an element the markup hides: `hidden`, `aria-hidden="true"` or `inert` (see `hiddenFromReaders` below), `display: none` or `visibility: hidden` in its `style`, a `<dialog>` without `open`, a template, or classes such as `modal`, `drawer`, `offcanvas`, `popover`, `tooltip`, `sr-only`, or `screen-reader-text`. |
 | `first-screen` | Fewer than 200 characters of visible text and no visible image before it. |
 | `below` | At least 1,500 characters and a quarter of the page's visible text before it. |
 | `unknown` | Everything else. Slides of a carousel or slider are always `unknown`, since the markup lists them side by side; elements in a header or a fixed or sticky container are never `below`, since such containers stay in view. |
@@ -186,6 +186,10 @@ const html = await cleanHtml(page, {
 ```
 
 `remove` accepts `scripts`, `styles` (with style attributes and inline SVG), `comments`, `cookieConsent`, `ariaHidden`, `images`, `classes`, `ids`, `meta`, `linkTags`, and `hyphenation`. Links that `links` does not keep become their text.
+
+`cookieConsent` removes the dialogs, banners, and content blockers of widespread consent tools, Borlabs Cookie, Cookiebot, Usercentrics, Complianz, OneTrust, Real Cookie Banner, and others, by the selectors `consentSelectors` lists; the list is exported for callers that leave the consent tool out of what they read or measure, in a browser too.
+
+`ariaHidden` removes what screen readers do not get: elements with `aria-hidden="true"` or `inert`, and texts for screen readers only such as skip links. An open modal dialog, such as a consent dialog, marks the page behind it `aria-hidden` for a moment, not for good, and a page rendered and saved while the dialog was open still carries the mark. The rule `hiddenFromReaders(tag, attributes)`, exported for callers that read hidden content themselves, leaves out the main landmark (`<main>` or `role="main"`), which no page hides from readers for good; any other `aria-hidden` or `inert` element counts as hidden, as without a browser nothing tells whether a dialog is open. A browser script can add that condition.
 
 ## Markdown
 

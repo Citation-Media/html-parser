@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.0 (2026-10-13)
+
+### Features
+
+- `consentSelectors` lists the dialogs, banners, and content blockers of widespread consent tools, the list `cleanHtml` removes with `cookieConsent`, now with Cookiebot, Complianz, CookieYes, Cookie Law Info, OneTrust, Klaro, CCM19, Real Cookie Banner, consentmanager, CookieConsent, Didomi, Sourcepoint, Quantcast, TrustArc, and Moove besides Borlabs Cookie and Usercentrics.
+- `hiddenFromReaders(tag, attributes)` tells whether an element's `aria-hidden="true"` or `inert` hides its content from screen readers, leaving out the main landmark, which an open dialog marks for a moment and no page hides for good.
+
+### Fixes
+
+- `cleanHtml` with `ariaHidden` no longer removes the main landmark. An open modal dialog, such as a consent dialog on a first visit, marks every other child of the body `aria-hidden`, `<main>` included; a page rendered and saved in that state lost its whole content and kept only the dialog. `inert` elements are now removed like `aria-hidden` ones.
+- `positions` takes images and islands inside `aria-hidden="true"` or `inert` elements, such as a slider's clones, as `hidden`, with the same exception for the main landmark.
+
 ## 0.5.1 (2026-10-13)
 
 ### Fixes

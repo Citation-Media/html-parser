@@ -51,6 +51,29 @@ test("removes what is asked and always strips EXIF and binary data", async () =>
   expect(cleaned).toContain("<p>Textteil</p>");
 });
 
+test("keeps the main landmark an open dialog marked aria-hidden, removes what is hidden for good", async () => {
+  const cleaned = await cleanHtml(
+    `<body><header aria-hidden="true">Kopf</header>
+    <main aria-hidden="true"><p>Inhalt</p></main>
+    <div aria-hidden="true">Klon</div><div inert>Menü</div><span class="sr-only">Nur vorgelesen</span>
+    <div id="BorlabsCookieBox">Cookies</div><div id="Footer-CookieBanner">Banner</div>
+    <div class="cmplz-cookiebanner">Complianz</div></body>`,
+    { remove: { ariaHidden: true, cookieConsent: true }, url }
+  );
+  expect(cleaned).toContain("Inhalt");
+  for (const gone of [
+    "Kopf",
+    "Klon",
+    "Menü",
+    "Nur vorgelesen",
+    "Cookies",
+    "Banner",
+    "Complianz",
+  ]) {
+    expect(cleaned).not.toContain(gone);
+  }
+});
+
 test("keeps everything but EXIF data by default", async () => {
   const cleaned = await cleanHtml(
     '<p class="b"><!-- c --><script>x</script>Text</p>',
