@@ -30,9 +30,9 @@ const { links, images, meta } = await parseHtml(response, {
 | --- | --- |
 | `url` | Required. Resolves relative URLs and tells internal links from external ones. |
 | `links` | `true` or a filter: `kinds` (`internal`, `external`, `special`, `anchor`) and `resources: false` to drop downloads such as PDFs. |
-| `images` | Images with `alt` (`null` when missing, `""` when decorative), `width`, `height`, `loading`, and whether they have a `srcset`. |
-| `resources` | Scripts with their `src`, `type`, attribute names, and whether they stand in the `<head>`, frame URLs, and `<link>` elements with their `rel` and, where they have one, `type`, such as `text/markdown` for a Markdown version of the page. A classic script in the head without `async`, `defer`, or `nomodule` blocks the first render. |
-| `meta` | Title, description, language, canonical URL, robots, viewport, generator, and Open Graph image. The title is the document's first `<title>`; an SVG's `<title>` names the graphic and does not count. |
+| `images` | Images with `alt` (`null` when missing, `""` when decorative), `width`, `height`, `loading`, whether they have a `srcset`, and its URLs as `sources`, absolute, without data URLs, at most 20. |
+| `resources` | Scripts with their `src`, `type`, attribute names, and whether they stand in the `<head>`, frame URLs, `<link>` elements with their `rel` and, where they have one, `type`, such as `text/markdown` for a Markdown version of the page, and `media`, the URLs of audio, video, their sources and tracks, a `<picture>`'s sources, embeds, and objects, each once. A classic script in the head without `async`, `defer`, or `nomodule` blocks the first render. |
+| `meta` | Title, description, language, canonical URL, robots, viewport, generator, Open Graph image, and `properties`, every `<meta property>` such as `og:title` or `article:published_time` by its lower-cased property, the first where one repeats, at most 50. The title is the document's first `<title>`; an SVG's `<title>` names the graphic and does not count. |
 | `headings` | The first 200 headings with their level and text, and `headingCounts` per level without a limit. |
 | `classPrefixes` | Counts of elements whose class starts with a prefix, such as `["elementor-", "brxe-", "wp-block-"]`. |
 | `context` | A CSS selector such as `main` or `article`: only content inside matching elements counts. When nothing matches, the whole page counts. It takes types, `#id`, `.class`, attribute selectors with `=`, `~=`, `\|=`, `^=`, `$=`, `*=` and an `i` flag, `:first-child`, `:nth-child()`, `:first-of-type`, `:nth-of-type()`, `:not()`, and the descendant and `>` combinators, as HTMLRewriter does; selectors that need what comes after an element, such as `:last-child` or `+`, throw a `SyntaxError`. |
@@ -40,6 +40,7 @@ const { links, images, meta } = await parseHtml(response, {
 | `styles` | The page's own CSS for `readStyles`: `blocks`, each `<style>` block's text with its `id`; `attributes`, each `style` attribute with its element, such as `div#hero.banner`; and `stylesheets`, the absolute URLs of `rel="stylesheet"` links and stylesheets preloaded with `as="style"`. Read regardless of `context`. |
 | `hydration` | The framework that hydrates the page in the browser, or `null`, see [Hydration](#hydration). Read regardless of `context`. |
 | `positions` | Adds a `position` to each image and Astro island, see [First Screen](#first-screen). Read regardless of `context`. |
+| `hidden` | Marks each link, image, and heading inside hidden content with `hidden`, see [Hidden Content](#hidden-content): `true` for what the markup states, or a rule `(tag, attributes, byMarkup) => boolean` that decides given it. A link or image repeated in plain sight is not hidden. |
 | `text` | The text a visitor reads, as `length` and `content`: without the head, scripts, styles, templates, `<noscript>`, and SVG, with whitespace collapsed and block elements separated by a space. `{ maxLength }` cuts `content`, 100,000 characters by default; `length` counts the whole text. Little text in the body as served marks a page that scripts render. |
 | `inlineCode` | What a Content Security Policy has to allow: `scripts`, the text of every inline script a browser runs, exactly as written for its hash, without data blocks such as JSON-LD or templates; `eventHandlers`, attributes such as `onclick`; `javascriptUrls` in `href`, `src`, `action`, and `formaction`; `styleElements` and `styleAttributes`; and `formActions`, the absolute URLs forms send to. Read regardless of `context`. |
 | `ids` | The targets a fragment link such as `#team` can point to: every element's `id` and each `<a>`'s `name`, in page order, each once, at most 5,000. Read regardless of `context`. Compare them with the `anchor` links of the same page, or the fragments of internal links to it, to find links that lead nowhere. |
@@ -49,6 +50,14 @@ const { links, images, meta } = await parseHtml(response, {
 `readStructuredData(blocks)` turns the text of JSON-LD blocks into the same result, for blocks you already have. It checks only that each block is JSON; whether the nodes carry the properties a search engine expects is up to the caller.
 
 Links are deduplicated by URL, counted, and sorted by count. Each carries its `text`, `kind`, `resource`, `count`, and, where present, `rel`, `target`, and `aria-label`. URLs are absolute; paths keep their case. Texts read as a DOM's `textContent` does, with entities decoded once and whitespace collapsed.
+
+## Hidden Content
+
+With `hidden`, each link, image, and heading says whether it stands in content the markup hides: a `<template>`, a `<dialog>` without `open`, the `hidden` attribute, `aria-hidden="true"` or `inert`, or `display: none` or `visibility: hidden` in a `style` attribute. That is `hidesContent(tag, attributes)`, exported, and `hiddenFromReaders(tag, attributes)` is its `aria-hidden` and `inert` part, which leaves out the main landmark (`<main>` or `role="main"`): an open modal dialog, such as a consent dialog, marks the page behind it `aria-hidden` for a moment, not for good, and a page rendered and saved in that state still carries the mark, while no page hides its main content from readers for good. Nothing is guessed from classes.
+
+A rule in place of `true` decides for each element, given what the markup says: `(tag, attributes, byMarkup) => byMarkup && !attributes.class?.includes("popup")` keeps popups, which may hold an imprint, and `(tag, attributes, byMarkup) => byMarkup || /\bsr-only\b/.test(attributes.class ?? "")` hides screen-reader-only text as well. With `positions`, the same decision tells which containers hide their content, besides the classes the estimate reads on its own.
+
+A link or image that the page repeats is hidden only when every occurrence is: a logo in a closed menu and in the header is in plain sight. Headings are listed in page order, hidden ones included, so a heading outline can skip or show them. `<noscript>` content is text to the tokenizer and is never collected.
 
 ## One Pass For Several Needs
 
@@ -106,7 +115,7 @@ With `positions`, each image and Astro island gets a `position`: where it is exp
 
 | `position` | When |
 | --- | --- |
-| `hidden` | Inside an element the markup hides: `hidden`, `aria-hidden="true"` or `inert` (see `hiddenFromReaders` below), `display: none` or `visibility: hidden` in its `style`, a `<dialog>` without `open`, a template, or classes such as `modal`, `drawer`, `offcanvas`, `popover`, `tooltip`, `sr-only`, or `screen-reader-text`. |
+| `hidden` | Inside an element the markup hides, see [Hidden Content](#hidden-content), or whose classes mark a closed or screen-reader-only container, such as `modal`, `drawer`, `offcanvas`, `popover`, `tooltip`, `sr-only`, or `screen-reader-text`. |
 | `first-screen` | Fewer than 200 characters of visible text and no visible image before it. |
 | `below` | At least 1,500 characters and a quarter of the page's visible text before it. |
 | `unknown` | Everything else. Slides of a carousel or slider are always `unknown`, since the markup lists them side by side; elements in a header or a fixed or sticky container are never `below`, since such containers stay in view. |
@@ -211,6 +220,8 @@ npm run build
 ```
 
 Tests run in workerd through `@cloudflare/vitest-pool-workers` and in Node.js, except those of `cleanHtml`, which need HTMLRewriter.
+
+`node --expose-gc bench/parse.mjs <directory of .html files> [dist] [options as JSON]` parses each page fifteen times with every option on and prints the median per page and the total, for comparing a change against `main`'s build (`npm run build` and copy `dist` aside). The pages are not part of the repository; take a few real ones of different sizes.
 
 ## Release
 

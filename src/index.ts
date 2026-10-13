@@ -14,11 +14,12 @@ export type {
   Hydration,
   HydrationFramework,
 } from "./hydration.ts";
-export { hiddenFromReaders } from "./layout.ts";
+export { hiddenFromReaders, hidesContent } from "./layout.ts";
 export type { ScreenPosition } from "./layout.ts";
 export { parseHtml, parseHtmlSync } from "./parse.ts";
 export type {
   Heading,
+  HiddenRule,
   HtmlInput,
   Image,
   InlineCode,
@@ -33,7 +34,7 @@ export type {
   Script,
   VisibleText,
 } from "./parse.ts";
-export { readStructuredData } from "./structured-data.ts";
+export { maxBlockLength, readStructuredData } from "./structured-data.ts";
 export { readDeclarations, readStyles } from "./styles.ts";
 export type {
   ColorUse,

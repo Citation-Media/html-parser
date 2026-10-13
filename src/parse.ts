@@ -16,6 +16,7 @@ import type { AstroIsland, Hydration, HydrationState } from "./hydration.ts";
 import {
   closeContainers,
   emptyLayout,
+  hidesContent,
   positionOf,
   readElement,
   readText,
@@ -56,6 +57,8 @@ export interface Link {
   target?: string;
   /** `aria-label` of the first link, which names links whose text does not. */
   label?: string;
+  /** With the `hidden` option: whether every link to this URL is in hidden content. */
+  hidden?: boolean;
 }
 
 export interface Image {
@@ -66,8 +69,12 @@ export interface Image {
   height?: string;
   loading?: string;
   srcset: boolean;
+  /** The absolute URLs of its `srcset`, where it has one, at most `maxSources`. */
+  sources?: string[];
   /** Where its first occurrence is expected on a desktop visit, with the `positions` option. */
   position?: ScreenPosition;
+  /** With the `hidden` option: whether every occurrence of this image is in hidden content. */
+  hidden?: boolean;
 }
 
 export interface Script {
@@ -87,6 +94,11 @@ export interface Resources {
    * where they have one, such as `text/markdown` for a Markdown version of the page.
    */
   links: { href: string; rel: string; type?: string }[];
+  /**
+   * The absolute URLs of audio, video, their `<source>`s and `<track>`s, a `<picture>`'s sources,
+   * `<embed>`s, and `<object>`s, each once; what a page loads besides scripts, frames, and images.
+   */
+  media: string[];
 }
 
 export interface Meta {
@@ -98,12 +110,30 @@ export interface Meta {
   viewport?: string;
   generator?: string;
   image?: string;
+  /**
+   * Every `<meta property>` such as `og:title` or `article:published_time`, by its lower-cased
+   * property, the first one where a property repeats, at most `maxProperties`.
+   */
+  properties?: Record<string, string>;
 }
 
 export interface Heading {
   level: number;
   text: string;
+  /** With the `hidden` option: whether the heading is in hidden content. */
+  hidden?: boolean;
 }
+
+/**
+ * Decides whether an element hides its content, given what `hidesContent` says about its markup
+ * (`byMarkup`). A caller keeps a popup's imprint with `(tag, attributes, byMarkup) => byMarkup &&
+ * !attributes.class?.includes("popup")`, or hides screen-reader-only text as well.
+ */
+export type HiddenRule = (
+  tag: string,
+  attributes: Record<string, string>,
+  byMarkup: boolean
+) => boolean;
 
 /** The page's own CSS, for `readStyles`: what it writes inline and which stylesheets it loads. */
 export interface PageStyles {
@@ -175,6 +205,12 @@ export interface ParseOptions {
    * `position`, from the markup alone. Read regardless of `context`.
    */
   positions?: boolean;
+  /**
+   * Marks links, images, and headings inside hidden content with `hidden`: what `hidesContent`
+   * reads from the markup, or what a `HiddenRule` decides given it. With `positions`, the same
+   * decision tells which containers hide their content.
+   */
+  hidden?: boolean | HiddenRule;
   /** The visible text, as `text`; `maxLength` cuts its content, 100,000 characters by default. */
   text?: boolean | { maxLength?: number };
   /** What a Content Security Policy has to allow, as `inlineCode`. Read regardless of `context`. */
@@ -226,6 +262,8 @@ const maxStyleBlockLength = 2_000_000;
 const maxStyleAttributes = 2000;
 const maxResources = 500;
 const maxIds = 5000;
+const maxSources = 20;
+const maxProperties = 50;
 const defaultTextLength = 100_000;
 
 // The type may carry parameters, such as `application/ld+json; charset=utf-8`.
@@ -316,7 +354,8 @@ const blocks = new Set([
 
 const urlAttributes = ["href", "src", "action", "formaction"] as const;
 
-const metaFields = new Map<string, keyof Meta>([
+// The single-valued fields; `properties` collects every `<meta property>` on its own.
+const metaFields = new Map<string, Exclude<keyof Meta, "properties">>([
   ["description", "description"],
   ["generator", "generator"],
   ["og:image", "image"],
@@ -335,9 +374,11 @@ interface Frame extends SelectorFrame {
   types: Map<string, number> | undefined;
   /** Layout containers it opened, for `positions`. */
   containers: ReturnType<typeof readElement> | undefined;
+  /** Whether it hides its content, for `hidden`. */
+  hidden: boolean;
   context: boolean;
   link: string[] | undefined;
-  heading: { level: number; text: string[] } | undefined;
+  heading: { level: number; text: string[]; hidden?: boolean } | undefined;
   title: string[] | undefined;
   /** The text of an inline script that runs, for `inlineCode`. */
   inline: string[] | undefined;
@@ -364,12 +405,13 @@ interface Pass {
   inContext: number;
   contextFound: boolean;
   stack: Frame[];
-  /** Open <head>, <svg>, and elements whose text is hidden. */
+  /** Open <head>, <svg>, elements whose text is hidden, and elements that hide their content. */
   inHead: number;
   inSvg: number;
   inHiddenText: number;
+  inHidden: number;
   link: string[] | undefined;
-  heading: { level: number; text: string[] } | undefined;
+  heading: { level: number; text: string[]; hidden?: boolean } | undefined;
   title: string[] | undefined;
   titleRead: boolean;
   /** Text of the JSON-LD blocks read so far, and whether the open script is one. */
@@ -378,6 +420,8 @@ interface Pass {
   readingStyle: boolean;
   styles: PageStyles;
   hydration: HydrationState;
+  /** Present with the `hidden` option: the rule that decides what hides its content. */
+  hiddenRule: HiddenRule | undefined;
   /** Present with the `positions` option. */
   layout: Layout | undefined;
   /** The spots of the images and islands whose position is asked for. */
@@ -421,6 +465,10 @@ const addLink = (
   const existing = links.get(found.url);
   if (existing) {
     existing.count += 1;
+    // One link in plain sight makes the URL reachable, however many hidden menus repeat it.
+    if (existing.hidden && found.hidden === false) {
+      existing.hidden = false;
+    }
     return;
   }
   const { href, ...link } = found;
@@ -588,6 +636,18 @@ const enterMeta = (
       if (field) {
         pass.meta[field] = attributes.content;
       }
+      const { property, content } = attributes;
+      if (property && content !== undefined) {
+        pass.meta.properties ??= {};
+        const { properties } = pass.meta;
+        const key = property.toLowerCase();
+        if (
+          !(key in properties) &&
+          Object.keys(properties).length < maxProperties
+        ) {
+          properties[key] = content;
+        }
+      }
       break;
     }
     case "link": {
@@ -638,6 +698,39 @@ const enterStyles = (
   }
 };
 
+/**
+ * The absolute URLs of a `srcset`, without data URLs. Candidates are separated by commas, and a
+ * descriptor's comma may run straight into the next URL, as in `400w,/b.jpg`, while a data URL
+ * holds commas of its own. So the attribute is read word by word: a URL ends at its first comma
+ * unless it is a data URL, and its descriptors run to the comma that ends the candidate.
+ */
+const srcsetUrls = (pass: Pass, srcset: string) => {
+  const urls: string[] = [];
+  const add = (url: string) => {
+    if (url && !url.startsWith("data:") && urls.length < maxSources) {
+      const resolved = resolve(pass, url);
+      if (!urls.includes(resolved)) {
+        urls.push(resolved);
+      }
+    }
+  };
+  let expectUrl = true;
+  for (const word of srcset.trim().split(/\s+/u)) {
+    let rest = word;
+    while (rest !== "") {
+      const comma = rest.startsWith("data:") ? -1 : rest.indexOf(",");
+      if (expectUrl) {
+        add(comma === -1 ? rest.replace(/,+$/u, "") : rest.slice(0, comma));
+        expectUrl = comma !== -1 || rest.endsWith(",");
+      } else {
+        expectUrl = comma !== -1;
+      }
+      rest = comma === -1 ? "" : rest.slice(comma + 1);
+    }
+  }
+  return urls;
+};
+
 const enterImage = (pass: Pass, attributes: Record<string, string>) => {
   // Lazy-loading scripts keep the real address in data-src and a placeholder in src.
   const src = [
@@ -649,17 +742,24 @@ const enterImage = (pass: Pass, attributes: Record<string, string>) => {
     return;
   }
   const url = resolve(pass, src);
-  if (pass.images.has(url)) {
+  const hidden = pass.options.hidden ? pass.inHidden > 0 : undefined;
+  const existing = pass.images.get(url);
+  if (existing) {
+    if (existing.hidden && hidden === false) {
+      existing.hidden = false;
+    }
     return;
   }
-  const { alt } = attributes;
+  const { alt, srcset } = attributes;
   const image: Image = {
     alt: alt === undefined ? null : clean(alt),
     height: attributes.height,
     loading: attributes.loading,
-    srcset: "srcset" in attributes,
+    srcset: srcset !== undefined,
     url,
     width: attributes.width,
+    ...(srcset && { sources: srcsetUrls(pass, srcset) }),
+    ...(hidden !== undefined && { hidden }),
   };
   pass.images.set(url, image);
   if (pass.layout) {
@@ -678,6 +778,7 @@ const openFrame = (pass: Pass, node: ElementNode): Frame => {
     context: false,
     headElement: undefined,
     heading: undefined,
+    hidden: false,
     inline: undefined,
     link: undefined,
     name,
@@ -701,8 +802,17 @@ const openFrame = (pass: Pass, node: ElementNode): Frame => {
 /** Tracks the containers an element opens: layout, context, head, SVG, and hidden text. */
 const enterStructure = (pass: Pass, frame: Frame) => {
   const { name, attributes } = frame;
-  if (pass.layout) {
-    frame.containers = readElement(pass.layout, name, attributes);
+  const rule = pass.hiddenRule;
+  if (rule || pass.layout) {
+    const byMarkup = hidesContent(name, attributes);
+    const hides = rule ? rule(name, attributes, byMarkup) : byMarkup;
+    if (hides && rule) {
+      frame.hidden = true;
+      pass.inHidden += 1;
+    }
+    if (pass.layout) {
+      frame.containers = readElement(pass.layout, name, attributes, hides);
+    }
   }
   if (pass.matcher?.(frame)) {
     pass.contextFound = true;
@@ -735,11 +845,24 @@ const enterHeading = (pass: Pass, frame: Frame) => {
   }
   const level = Number(frame.name.slice(1));
   pass.headingCounts[level - 1] = (pass.headingCounts[level - 1] ?? 0) + 1;
-  frame.heading = { level, text: [] };
+  frame.heading = {
+    level,
+    text: [],
+    ...(pass.options.hidden && { hidden: pass.inHidden > 0 }),
+  };
   pass.heading = frame.heading;
 };
 
-/** Frames and `<link>` elements, for `resources`. */
+const mediaTags = new Set([
+  "audio",
+  "embed",
+  "object",
+  "source",
+  "track",
+  "video",
+]);
+
+/** Frames, media, and `<link>` elements, for `resources`. */
 const enterResource = (pass: Pass, frame: Frame) => {
   const { attributes, name } = frame;
   const { resources } = pass;
@@ -747,6 +870,22 @@ const enterResource = (pass: Pass, frame: Frame) => {
     const { src } = attributes;
     if (src !== undefined && resources.frames.length < maxResources) {
       resources.frames.push(resolve(pass, src));
+    }
+    return;
+  }
+  if (mediaTags.has(name)) {
+    const { media } = resources;
+    const urls = [
+      ...(name === "object" ? [attributes.data] : [attributes.src]),
+      ...(attributes.srcset ? srcsetUrls(pass, attributes.srcset) : []),
+    ];
+    for (const url of urls) {
+      if (url && !url.startsWith("data:") && media.length < maxResources) {
+        const resolved = resolve(pass, url);
+        if (!media.includes(resolved)) {
+          media.push(resolved);
+        }
+      }
     }
     return;
   }
@@ -780,7 +919,10 @@ const enterTag = (pass: Pass, frame: Frame) => {
     enterImage(pass, frame.attributes);
   } else if (name === "script") {
     enterScript(pass, frame, frame.attributes);
-  } else if ((name === "iframe" || name === "link") && options.resources) {
+  } else if (
+    (name === "iframe" || name === "link" || mediaTags.has(name)) &&
+    options.resources
+  ) {
     enterResource(pass, frame);
   } else if (headingTags.has(name)) {
     enterHeading(pass, frame);
@@ -827,6 +969,9 @@ const leaveStructure = (pass: Pass, frame: Frame) => {
   if (frame.context) {
     pass.inContext -= 1;
   }
+  if (frame.hidden) {
+    pass.inHidden -= 1;
+  }
   if (name === "head") {
     pass.inHead -= 1;
   } else if (name === "svg") {
@@ -852,6 +997,7 @@ const leaveLink = (pass: Pass, frame: Frame, text: string[]) => {
       target: attributes.target,
       text: clean(text.join("")),
       url: resolve(pass, href),
+      ...(pass.options.hidden && { hidden: frame.hidden || pass.inHidden > 0 }),
     },
     pass.base
   );
@@ -861,7 +1007,11 @@ const leaveLink = (pass: Pass, frame: Frame, text: string[]) => {
 const leaveHeading = (pass: Pass, heading: NonNullable<Frame["heading"]>) => {
   const text = clean(heading.text.join(""));
   if (text && pass.headings.length < maxHeadings) {
-    pass.headings.push({ level: heading.level, text });
+    pass.headings.push({
+      level: heading.level,
+      text,
+      ...(heading.hidden !== undefined && { hidden: heading.hidden }),
+    });
   }
   pass.heading = undefined;
 };
@@ -964,6 +1114,16 @@ const handlersOf = (pass: Pass): Handlers => ({
   text: (value) => text(pass, value),
 });
 
+/** What the markup says, unless the caller's rule decides. */
+const byMarkupRule: HiddenRule = (_tag, _attributes, byMarkup) => byMarkup;
+
+const hiddenRuleOf = (hidden: ParseOptions["hidden"]) => {
+  if (hidden === true) {
+    return byMarkupRule;
+  }
+  return hidden || undefined;
+};
+
 const newPass = (options: ParseOptions): Pass => {
   const max =
     options.text && options.text !== true
@@ -980,11 +1140,13 @@ const newPass = (options: ParseOptions): Pass => {
     heading: undefined,
     headingCounts: [0, 0, 0, 0, 0, 0],
     headings: [],
+    hiddenRule: hiddenRuleOf(options.hidden),
     hydration: emptyHydration(),
     ids: new Set(),
     images: new Map(),
     inContext: options.context ? 0 : 1,
     inHead: 0,
+    inHidden: 0,
     inHiddenText: 0,
     inSvg: 0,
     inlineCode: {
@@ -1005,7 +1167,7 @@ const newPass = (options: ParseOptions): Pass => {
     options,
     readingJsonLd: false,
     readingStyle: false,
-    resources: { frames: [], links: [], scripts: [] },
+    resources: { frames: [], links: [], media: [], scripts: [] },
     spots: new Map(),
     stack: [],
     styles: { attributes: [], blocks: [], stylesheets: [] },

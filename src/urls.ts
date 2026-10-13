@@ -34,7 +34,8 @@ const resourceExtensions =
   /\.(?:pdf|docx?|xlsx?|pptx?|zip|rar|tar|gz|mp3|mp4|avi|mov|jpe?g|png|gif|svg|webp|avif|csv)$/iu;
 
 // Second-level labels under which registrable domains sit one level deeper, such as example.co.uk.
-const secondLevels = /^(?:co|com|org|net|gov|gv|ac|edu)$/u;
+// `or.at` and `or.jp` register organisations, as `org` does elsewhere.
+const secondLevels = /^(?:co|com|org|net|gov|gv|ac|edu|or)$/u;
 
 /** The special protocol of a URL, such as `mailto:`, or undefined for web and relative URLs. */
 export const specialProtocol = (url: string) => {
