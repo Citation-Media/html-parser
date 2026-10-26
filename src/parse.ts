@@ -259,7 +259,7 @@ export interface ParseOptions {
   ids?: boolean;
   /**
    * Writes the page as Markdown with mdream, as `markdown`. `true` uses mdream's defaults with the
-   * page's origin; an object passes its options, such as `plugins`, to mdream. mdream's filters
+   * page's URL; an object passes its options, such as `plugins`, to mdream. mdream's filters
    * shape only the Markdown, not what the other options collect.
    */
   markdown?: boolean | MarkdownOptions;
@@ -1591,9 +1591,9 @@ const markdownOptions = (
     return undefined;
   }
   if (markdown === true) {
-    return { origin: base.origin };
+    return { origin: base.href };
   }
-  return { origin: base.origin, ...markdown };
+  return { origin: base.href, ...markdown };
 };
 
 /** Whether a context was asked for but matched nothing, so the whole page has to count. */

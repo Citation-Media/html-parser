@@ -44,7 +44,7 @@ const { links, images, meta } = await parseHtml(response, {
 | `text` | The text a visitor reads, as `length` and `content`: without the head, scripts, styles, templates, `<noscript>`, and SVG, with whitespace collapsed and block elements separated by a space. `{ maxLength }` cuts `content`, 100,000 characters by default; `length` counts the whole text. Little text in the body as served marks a page that scripts render. |
 | `inlineCode` | What a Content Security Policy has to allow: `scripts`, the text of every inline script a browser runs, exactly as written for its hash, without data blocks such as JSON-LD or templates; `eventHandlers`, attributes such as `onclick`; `javascriptUrls` in `href`, `src`, `action`, and `formaction`; `styleElements` and `styleAttributes`; and `formActions`, the absolute URLs forms send to. Read regardless of `context`. |
 | `ids` | The targets a fragment link such as `#team` can point to: every element's `id` and each `<a>`'s `name`, in page order, each once, at most 5,000. Read regardless of `context`. Compare them with the `anchor` links of the same page, or the fragments of internal links to it, to find links that lead nowhere. |
-| `markdown` | The page as Markdown, written by mdream from the same input: `true` for mdream's defaults with the page's origin, or mdream's options, such as `{ plugins: { filter: { exclude: ["nav"] }, isolateMain: true } }`. mdream's filters shape only the Markdown, never what the other options collect. |
+| `markdown` | The page as Markdown, written by mdream from the same input: `true` for mdream's defaults with the full page URL as its base, or mdream's options, such as `{ plugins: { filter: { exclude: ["nav"] }, isolateMain: true } }`. An explicit `origin` overrides the base. mdream's filters shape only the Markdown, never what the other options collect. |
 | `head` | The `<head>` as [unhead](https://unhead.unjs.io/) validates it, see [Head](#head). Read regardless of `context`. |
 | `select` | Elements by CSS selector, as `selected` under the same keys: `{ addresses: "address", times: "time[datetime]" }` gives each match's `tag`, `attributes`, and `text` (as `textContent`, without scripts and styles, cut at 2,000 characters), at most 200 per key, in page order; with `hidden`, whether it is in hidden content. The selectors are those `context` takes. Read regardless of `context`. |
 | `forms` | The page's forms: `action` (absolute; the page's own address where the form names none), `method` (`get`, `post`, or `dialog`), `id` and `name`, `fields` with their `tag`, `type` (lower-cased, `text` by default), `name`, `id`, `autocomplete`, `placeholder`, `required`, and `label` (the `<label>` by `for` or wrapping it, else `aria-label`), and `buttons`, the texts of its buttons. Fields outside a `<form>` are not read; with `hidden`, a form says whether it is in hidden content. |
@@ -205,6 +205,8 @@ const html = await cleanHtml(page, {
 ## Markdown
 
 The Markdown itself is mdream's: the `markdown` option hands it the page with your options. To convert with mdream's WebAssembly engine, the `mdream` package, call it on the same text yourself.
+
+Relative Markdown links and images use the full page `url` as their base. For example, with `url: "https://example.com/guides/start/"`, `next/` resolves to `https://example.com/guides/start/next/`. Set `markdown.origin` to override that base.
 
 ## Limits
 
