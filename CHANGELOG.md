@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Behavior change: resolve Markdown links and images against the full page URL by default, preserving the path for relative destinations. For example, `img.png` on `/a/b/` now resolves under `/a/b/`, rather than `/`. Explicit `markdown.origin` overrides remain supported.
+- Document website Markdown export policy, UTF-8 decoding, content selection, meaningful links, SSR components, and whitespace preservation.
+
 ## 0.8.0 (2026-10-13)
 
 ### Features
