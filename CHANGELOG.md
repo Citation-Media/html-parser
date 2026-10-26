@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.1 (2026-10-26)
 
 - Fix relative Markdown links and images resolving against the site root instead of the full page URL. Explicit `markdown.origin` overrides remain supported.
 
