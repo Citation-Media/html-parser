@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.2 (2026-11-04)
+
+- Support `@mdream/js` 2. The peer range is now `^1.7.2 || ^2.0.3`, replacing `2.0.0-beta.1`. The `markdown` option passes its options to the installed mdream, so with mdream 2 `plugins` is an array of plugin instances from `@mdream/js/plugins`.
+
 ## 0.8.1 (2026-10-26)
 
 - Fix relative Markdown links and images resolving against the site root instead of the full page URL. Explicit `markdown.origin` overrides remain supported.

@@ -1,3 +1,4 @@
+import { filterPlugin } from "@mdream/js/plugins";
 import { describe, expect, test } from "vitest";
 
 import { parseHtml, parseHtmlSync } from "../src/index.ts";
@@ -12,7 +13,7 @@ const html = `<main><h1>Grüße &amp; 👩‍💻</h1>
 describe("Markdown", () => {
   test("uses the page URL for relative links and images with defaults or custom options", async () => {
     await Promise.all(
-      [true, { plugins: { filter: { include: ["main"] } } }].map(
+      [true, { plugins: [filterPlugin({ include: ["main"] })] }].map(
         async (markdown) => {
           const result = parseHtmlSync(html, { markdown, url });
           expect(result.markdown).toContain(

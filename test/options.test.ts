@@ -1,3 +1,4 @@
+import { filterPlugin, isolateMainPlugin } from "@mdream/js/plugins";
 import { describe, expect, test } from "vitest";
 
 import { parseHtml, parseHtmlSync } from "../src/index.ts";
@@ -272,10 +273,10 @@ describe("markdown", () => {
     const { links, markdown, text } = await parseHtml(page, {
       links: true,
       markdown: {
-        plugins: {
-          filter: { exclude: ["script", "[role='dialog']"] },
-          isolateMain: true,
-        },
+        plugins: [
+          isolateMainPlugin(),
+          filterPlugin({ exclude: ["script", "[role='dialog']"] }),
+        ],
       },
       text: true,
       url,
