@@ -1,6 +1,6 @@
 {
   "name": "@citation-media/html-parser",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "HTML parser for any JavaScript runtime: links, images, resources, metadata, JSON-LD, styles, hydration, and text in one pass without a DOM, with Markdown from mdream.",
   "keywords": [
     "cloudflare-workers",
@@ -50,7 +50,7 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.22.0",
     "@cloudflare/workers-types": "5.20260929.1",
-    "@mdream/js": "1.7.2",
+    "@mdream/js": "2.0.3",
     "oxfmt": "0.68.0",
     "oxlint": "1.83.0",
     "typescript": "6.0.3",
@@ -58,7 +58,7 @@
     "vitest": "4.1.11"
   },
   "peerDependencies": {
-    "@mdream/js": "^1.7.2 || 2.0.0-beta.1"
+    "@mdream/js": "^1.7.2 || ^2.0.3"
   },
   "engines": {
     "node": ">=22.18.0"
