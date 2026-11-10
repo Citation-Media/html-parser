@@ -74,6 +74,25 @@ test("keeps the main landmark an open dialog marked aria-hidden, removes what is
   }
 });
 
+test("removes soft hyphens however the source writes them", async () => {
+  const html =
+    "<p>Bar&shy;rie&#173;re&#xAD;frei&#x00ad;heit­en &amp; &#1730;</p>";
+  expect(await cleanHtml(html, { remove: { hyphenation: true }, url })).toBe(
+    "<p>Barrierefreiheiten &amp; &#1730;</p>"
+  );
+  expect(await cleanHtml(html, { url })).toBe(html);
+});
+
+test("filters links by where a <base href> leads them", async () => {
+  const cleaned = await cleanHtml(
+    '<head><base href="https://other.org/"></head><a href="x">Out</a> <a href="https://example.com/y">In</a>',
+    { links: { kinds: ["internal"] }, url }
+  );
+  expect(cleaned).toBe(
+    '<head><base href="https://other.org/"></head>Out <a href="https://example.com/y">In</a>'
+  );
+});
+
 test("keeps everything but EXIF data by default", async () => {
   const cleaned = await cleanHtml(
     '<p class="b"><!-- c --><script>x</script>Text</p>',

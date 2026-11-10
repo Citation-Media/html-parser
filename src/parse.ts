@@ -38,8 +38,9 @@ import type { LinkKind } from "./urls.ts";
 /**
  * One pass over a page with mdream's tokenizer, which never builds a DOM and runs in any JavaScript
  * runtime: it collects links, images, resources, metadata, headings, class counts, JSON-LD, styles,
- * hydration, visible text, and inline code. When asked, mdream also writes the page as Markdown
- * from the same input; a streamed page is then read once for both. A stream is read chunk by chunk.
+ * hydration, visible text, inline code, fragment targets, forms, and elements by selector. When
+ * asked, mdream also writes the page as Markdown from the same input; a streamed page is then read
+ * once for both. A stream is read chunk by chunk.
  */
 
 export type { HtmlInput, MarkdownOptions } from "./engine.ts";
@@ -103,12 +104,17 @@ export interface Resources {
 
 export interface Meta {
   title?: string;
+  /** The first `<meta name="description">` that has content. */
   description?: string;
   language?: string;
   canonical?: string;
+  /** Every `<meta name="robots">`, joined by commas, as search engines apply all of them. */
   robots?: string;
+  /** The last `<meta name="viewport">`, the one a browser applies. */
   viewport?: string;
+  /** The first `<meta name="generator">` that has content. */
   generator?: string;
+  /** The first Open Graph image, absolute. */
   image?: string;
   /**
    * Every `<meta property>` such as `og:title` or `article:published_time`, by its lower-cased
@@ -191,7 +197,10 @@ export interface FormField {
   autocomplete?: string;
   placeholder?: string;
   required: boolean;
-  /** The text of its `<label>`, by `for` or wrapping it, or its `aria-label`. */
+  /**
+   * Its `aria-label`, or else the text of its `<label>`, by `for` or wrapping it: the order in
+   * which a browser computes the name assistive technology announces.
+   */
   label?: string;
 }
 
@@ -217,8 +226,17 @@ export interface LinkFilter {
 }
 
 export interface ParseOptions {
-  /** The page's address, to resolve relative URLs and tell internal links from external ones. */
+  /**
+   * The page's address, to resolve relative URLs and tell internal links from external ones. A
+   * `<base href>` in the page's head takes its place for the URLs after it, as in a browser.
+   */
   url: string | URL;
+  /**
+   * The encoding of a response's or stream's bytes, such as `windows-1252`, where the caller knows
+   * it. Without it the page decides, as in a browser: a byte order mark, the response's
+   * `Content-Type`, a `<meta charset>` in the first 1,024 bytes, and UTF-8 otherwise.
+   */
+  encoding?: string;
   links?: boolean | LinkFilter;
   images?: boolean;
   resources?: boolean;
@@ -358,6 +376,9 @@ const hiddenText = new Set([
   "title",
 ]);
 
+// Elements whose content the tokenizer hands over as one text: code and markup, not words.
+const codeTags = new Set(["noscript", "script", "style"]);
+
 // Elements that start a new line, so their text never runs into the text before or after.
 const blocks = new Set([
   "address",
@@ -410,15 +431,6 @@ const blocks = new Set([
 
 const urlAttributes = ["href", "src", "action", "formaction"] as const;
 
-// The single-valued fields; `properties` collects every `<meta property>` on its own.
-const metaFields = new Map<string, Exclude<keyof Meta, "properties">>([
-  ["description", "description"],
-  ["generator", "generator"],
-  ["og:image", "image"],
-  ["robots", "robots"],
-  ["viewport", "viewport"],
-]);
-
 /** Text as a browser shows it: entities are already decoded by the tokenizer. */
 const clean = (text: string) =>
   collapseWhitespace(removeHyphenation(text)).trim();
@@ -467,7 +479,12 @@ interface Collector {
 /** What the handlers of one pass share while the page streams through. */
 interface Pass {
   options: ParseOptions;
+  /** The page's own address, which tells its site's links from others. */
+  page: URL;
+  /** What relative URLs resolve against: the page's address, or its `<base href>` once read. */
   base: URL;
+  /** Whether the base is final: a `<base href>` was read, or content began without one. */
+  baseSettled: boolean;
   /** Resolved addresses by their written form; pages repeat most of theirs. */
   urls: Map<string, string>;
   linkFilter: LinkFilter | undefined;
@@ -546,7 +563,7 @@ const resolve = (pass: Pass, url: string) => {
 const addLink = (
   links: Map<string, Link>,
   found: Omit<Link, "kind" | "resource" | "count"> & { href: string },
-  base: URL
+  page: URL
 ) => {
   // Cloudflare's e-mail obfuscation rewrites addresses to a script-decoded link.
   if (found.url.includes("/cdn-cgi/l/email-protection")) {
@@ -565,7 +582,7 @@ const addLink = (
   links.set(found.url, {
     ...link,
     count: 1,
-    kind: linkKind(href, found.url, base),
+    kind: linkKind(href, found.url, page),
     resource: isResource(found.url),
   });
 };
@@ -699,6 +716,38 @@ const enterScript = (
   }
 };
 
+/**
+ * The single-valued fields. Where a page repeats one, the first counts, as for Open Graph and the
+ * title, except for robots, whose rules add up, and the viewport, where a browser applies the last.
+ */
+const readMetaField = (pass: Pass, name: string, content: string) => {
+  const { meta } = pass;
+  switch (name) {
+    case "description": {
+      meta.description ??= content;
+      break;
+    }
+    case "generator": {
+      meta.generator ??= content;
+      break;
+    }
+    case "og:image": {
+      meta.image ??= resolve(pass, content);
+      break;
+    }
+    case "robots": {
+      meta.robots =
+        meta.robots === undefined ? content : `${meta.robots}, ${content}`;
+      break;
+    }
+    case "viewport": {
+      meta.viewport = content;
+      break;
+    }
+    default:
+  }
+};
+
 const enterMeta = (
   pass: Pass,
   frame: Frame,
@@ -720,13 +769,14 @@ const enterMeta = (
       break;
     }
     case "meta": {
-      const field = metaFields.get(
-        (attributes.name ?? attributes.property ?? "").toLowerCase()
-      );
-      if (field) {
-        pass.meta[field] = attributes.content;
-      }
       const { property, content } = attributes;
+      if (content?.trim()) {
+        readMetaField(
+          pass,
+          (attributes.name ?? property ?? "").toLowerCase(),
+          content
+        );
+      }
       if (property && content !== undefined) {
         pass.meta.properties ??= {};
         const { properties } = pass.meta;
@@ -741,7 +791,8 @@ const enterMeta = (
       break;
     }
     case "link": {
-      if (attributes.rel === "canonical") {
+      // `rel` is a list of tokens in any case, such as `Canonical` or `canonical nofollow`.
+      if (attributes.rel?.toLowerCase().split(/\s+/u).includes("canonical")) {
         const { href } = attributes;
         pass.meta.canonical = href ? resolve(pass, href) : undefined;
       }
@@ -960,7 +1011,7 @@ const enterResource = (pass: Pass, frame: Frame) => {
   const { resources } = pass;
   if (name === "iframe") {
     const { src } = attributes;
-    if (src !== undefined && resources.frames.length < maxResources) {
+    if (src?.trim() && resources.frames.length < maxResources) {
       resources.frames.push(resolve(pass, src));
     }
     return;
@@ -982,7 +1033,7 @@ const enterResource = (pass: Pass, frame: Frame) => {
     return;
   }
   const { href } = attributes;
-  if (href !== undefined && resources.links.length < maxResources) {
+  if (href?.trim() && resources.links.length < maxResources) {
     const { type } = attributes;
     resources.links.push({
       href: resolve(pass, href),
@@ -1050,7 +1101,7 @@ const enterForm = (pass: Pass, frame: Frame) => {
   }
   const { action, id, name } = attributes;
   const form: Form = {
-    action: action?.trim() ? resolve(pass, action) : pass.base.href,
+    action: action?.trim() ? resolve(pass, action) : pass.page.href,
     buttons: [],
     fields: [],
     method: formMethod(attributes.method),
@@ -1084,7 +1135,7 @@ const fieldOf = (
   attributes: Record<string, string>
 ): FormField => {
   const { autocomplete, id, name, placeholder } = attributes;
-  const label = attributes["aria-label"];
+  const label = clean(attributes["aria-label"] ?? "");
   return {
     required: "required" in attributes,
     tag,
@@ -1093,7 +1144,7 @@ const fieldOf = (
     ...(id && { id }),
     ...(autocomplete && { autocomplete }),
     ...(placeholder && { placeholder: clean(placeholder) }),
-    ...(label && { label: clean(label) }),
+    ...(label && { label }),
   };
 };
 
@@ -1114,13 +1165,28 @@ const labelField = (pass: Pass, field: FormField) => {
   }
 };
 
+/** Keeps a select's options and a textarea's content out of the text of the label around it. */
+const withoutContent = (pass: Pass, frame: Frame) => {
+  const label = pass.collectors.findLast((collector) => collector.fields);
+  if (label) {
+    const { parts } = label;
+    const before = parts.length;
+    collect(pass, frame, () => {
+      parts.length = before;
+    });
+  }
+};
+
 /** A field, or a button, inside the open form. */
 const enterField = (pass: Pass, frame: Frame) => {
+  const { attributes, name } = frame;
+  if (name === "select" || name === "textarea") {
+    withoutContent(pass, frame);
+  }
   const { form } = pass;
   if (!form) {
     return;
   }
-  const { attributes, name } = frame;
   if (name === "button") {
     collect(pass, frame, (content) =>
       addButton(form, content || attributes.value || "")
@@ -1199,11 +1265,40 @@ const enterTag = (pass: Pass, frame: Frame) => {
   }
 };
 
+/**
+ * Settles what relative URLs resolve against: the first `<base href>` of the head, itself resolved
+ * against the page's address, or that address once content begins without one.
+ */
+const readBase = (
+  pass: Pass,
+  name: string,
+  attributes: Record<string, string>
+) => {
+  if (name !== "base") {
+    pass.baseSettled = pass.inHead === 0 && name !== "html" && name !== "head";
+    return;
+  }
+  const href = attributes.href?.trim();
+  if (!href) {
+    return;
+  }
+  pass.baseSettled = true;
+  try {
+    pass.base = new URL(href, pass.page);
+    pass.urls.clear();
+  } catch {
+    // A base that is no URL changes nothing.
+  }
+};
+
 const enter = (pass: Pass, node: ElementNode) => {
   const { options } = pass;
   const frame = openFrame(pass, node);
   const { name, attributes } = frame;
   enterStructure(pass, frame);
+  if (!pass.baseSettled) {
+    readBase(pass, name, attributes);
+  }
   if (options.classPrefixes && collecting(pass)) {
     countClasses(pass, attributes);
   }
@@ -1270,7 +1365,7 @@ const leaveLink = (pass: Pass, frame: Frame, text: string[]) => {
       url: resolve(pass, href),
       ...(pass.options.hidden && { hidden: frame.hidden || pass.inHidden > 0 }),
     },
-    pass.base
+    pass.page
   );
   pass.link = undefined;
 };
@@ -1386,8 +1481,11 @@ const text = (pass: Pass, value: string) => {
   if (!collecting(pass)) {
     return;
   }
-  pass.link?.push(value);
-  pass.heading?.text.push(value);
+  // A script's code, a style's CSS, and a <noscript>'s markup are no words of a link or heading.
+  if (!(frame && codeTags.has(frame.name))) {
+    pass.link?.push(value);
+    pass.heading?.text.push(value);
+  }
   if (pass.options.text && pass.inHiddenText === 0) {
     addText(pass, value);
   }
@@ -1447,8 +1545,10 @@ const linkFilterOf = (links: ParseOptions["links"]) =>
 
 const newPass = (options: ParseOptions): Pass => {
   const max = textLimitOf(options.text);
+  const page = new URL(options.url);
   return {
-    base: new URL(options.url),
+    base: page,
+    baseSettled: false,
     classCounts: initialClassCounts(options.classPrefixes),
     collectors: [],
     contextFound: false,
@@ -1485,6 +1585,7 @@ const newPass = (options: ParseOptions): Pass => {
     matcher: matcherOf(options.context),
     meta: {},
     options,
+    page,
     readingJsonLd: false,
     readingStyle: false,
     resources: { frames: [], links: [], media: [], scripts: [] },
@@ -1550,7 +1651,8 @@ const resultOf = (pass: Pass, markdown: string | undefined): ParseResult => {
   }
   if (options.text) {
     result.text = {
-      content: pass.text.parts.join("").trimEnd(),
+      // Only the space a block left at the end goes; a no-break space is text, and counted.
+      content: pass.text.parts.join("").replace(/ $/u, ""),
       length: pass.text.length - (pass.text.space ? 1 : 0),
     };
   }
@@ -1642,12 +1744,17 @@ export const parseHtml = async (
   const pass = newPass(options);
   // A stream can be read once, so a context that may match nothing keeps the text for a second pass.
   const kept: string[] | undefined = options.context ? [] : undefined;
-  const markdown = await scanStream(
-    input,
-    handlersOf(pass),
-    markdownOptions(options, pass.base),
-    kept
-  );
+  const markdown = await scanStream(input, handlersOf(pass), {
+    // The Markdown starts once the head has said what its URLs resolve against.
+    conversion: options.markdown
+      ? {
+          options: () => markdownOptions(options, pass.base) ?? {},
+          settled: () => pass.baseSettled,
+        }
+      : undefined,
+    encoding: options.encoding,
+    keep: kept,
+  });
   if (!kept || !missedContext(pass)) {
     return resultOf(pass, markdown);
   }

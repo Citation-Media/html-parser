@@ -3,8 +3,9 @@
  * through. The grammar is the one HTMLRewriter accepts, so a selector that worked there works here:
  * `*`, type, `#id`, `.class`, attribute selectors with `=`, `~=`, `|=`, `^=`, `$=`, `*=` and an `i`
  * or `s` flag, `:first-child`, `:nth-child()`, `:first-of-type`, `:nth-of-type()`, `:not()`, and the
- * descendant and child combinators, in comma-separated lists. Selectors that need the elements after
- * one, such as `:last-child` or sibling combinators, cannot be decided in one pass and throw.
+ * descendant and child combinators, in comma-separated lists. Ids and classes take CSS escapes, as
+ * in Tailwind's `.md\:flex`. Selectors that need the elements after one, such as `:last-child` or
+ * sibling combinators, cannot be decided in one pass and throw.
  */
 
 /** An open element as the matcher sees it. */
@@ -38,10 +39,11 @@ const closingBracket = (text: string) => {
   let quote = "";
   for (let index = 1; index < text.length; index += 1) {
     const char = text[index];
-    if (quote) {
-      if (char === "\\") {
-        index += 1;
-      } else if (char === quote) {
+    if (char === "\\") {
+      // An escaped character is itself, in a string or outside one.
+      index += 1;
+    } else if (quote) {
+      if (char === quote) {
         quote = "";
       }
     } else if (char === '"' || char === "'") {
@@ -61,10 +63,10 @@ const splitTop = (text: string, separator: string) => {
   let start = 0;
   for (let index = 0; index < text.length; index += 1) {
     const char = text[index];
-    if (quote) {
-      if (char === "\\") {
-        index += 1;
-      } else if (char === quote) {
+    if (char === "\\") {
+      index += 1;
+    } else if (quote) {
+      if (char === quote) {
         quote = "";
       }
     } else if (char === '"' || char === "'") {
@@ -185,7 +187,24 @@ const hasClass = (frame: Frame, name: string) => {
   return value !== undefined && value.split(/\s+/u).includes(name);
 };
 
-const identifier = /^-?[_a-z\P{ASCII}][\w\P{ASCII}-]*/iu;
+// A name: letters, digits, `-`, `_`, and what lies beyond ASCII, or any character escaped, as the
+// colon in `md\:flex` or by its code point in `\3A `.
+const identifier =
+  /^-?(?:[_a-z\P{ASCII}]|\\[\da-f]{1,6}\s?|\\[^\n\da-f])(?:[\w\P{ASCII}-]|\\[\da-f]{1,6}\s?|\\[^\n\da-f])*/iu;
+const escape = /\\(?:(?<hex>[\da-f]{1,6})\s?|(?<char>[^\n]))/giu;
+
+/** A name with its escapes resolved. */
+const unescaped = (name: string) =>
+  name.replaceAll(
+    escape,
+    (_match, hex: string | undefined, char: string | undefined) => {
+      if (hex === undefined) {
+        return char ?? "";
+      }
+      const point = Number.parseInt(hex, 16);
+      return point > 0x10_ff_ff ? "\uFFFD" : String.fromCodePoint(point);
+    }
+  );
 const pseudoClass =
   /^:(?<name>[a-z-]+)(?:\((?<argument>[^()]*(?:\([^()]*\)[^()]*)*)\))?/iu;
 
@@ -226,12 +245,13 @@ const pseudoTest = (name: string, argument: string, selector: string): Test => {
 };
 
 const readName = (rest: string, sigil: string, selector: string): Simple => {
-  const name = identifier.exec(rest.slice(1))?.[0];
-  if (!name) {
+  const written = identifier.exec(rest.slice(1))?.[0];
+  if (!written) {
     return fail(selector, `bad name after "${sigil}"`);
   }
+  const name = unescaped(written);
   return {
-    length: 1 + name.length,
+    length: 1 + written.length,
     test:
       sigil === "#"
         ? (frame) => frame.attributes.id === name
@@ -301,6 +321,8 @@ const compound = (text: string, selector: string): Test => {
   return (frame) => tests.every((test) => test(frame));
 };
 
+const anyEscape = /^\\(?:[\da-f]{1,6}\s?|[\s\S])?/iu;
+
 /** Compounds and combinators of a complex selector, split outside quotes and brackets. */
 const tokens = (text: string) => {
   const found: string[] = [];
@@ -315,12 +337,14 @@ const tokens = (text: string) => {
   };
   for (let index = 0; index < text.length; index += 1) {
     const char = text[index] ?? "";
+    if (char === "\\") {
+      // An escape takes the character after it, or up to six hex digits and the space that ends them.
+      const [taken = char] = anyEscape.exec(text.slice(index)) ?? [];
+      current += taken;
+      index += taken.length - 1;
+      continue;
+    }
     if (quote) {
-      if (char === "\\") {
-        current += char + (text[index + 1] ?? "");
-        index += 1;
-        continue;
-      }
       if (char === quote) {
         quote = "";
       }

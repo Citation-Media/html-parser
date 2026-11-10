@@ -43,6 +43,7 @@ export type {
   ColorUse,
   FontFace,
   FontUse,
+  ReadCss,
   StyleDeclaration,
   StyleMap,
   StyleSource,

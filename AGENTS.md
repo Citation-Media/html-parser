@@ -7,7 +7,7 @@ citation:
 
 # Agent Instructions
 
-This repository maintains `@citation-media/html-parser`, a library that extracts links, images, resources, metadata, headings, class counts, JSON-LD, styles, hydration, visible text, and inline code from HTML in one pass with mdream's tokenizer, without a DOM, in any JavaScript runtime, and cleans HTML. Converting HTML to Markdown is mdream's job; `parseHtml` only hands it the same input. Everything it needs is in this repository; keep it that way, since the repository and the npm package are public.
+This repository maintains `@citation-media/html-parser`, a library that extracts links, images, resources, metadata, headings, class counts, JSON-LD, styles, hydration, visible text, inline code, fragment targets, forms, and elements by selector from HTML in one pass with mdream's tokenizer, without a DOM, in any JavaScript runtime, and cleans HTML. Converting HTML to Markdown is mdream's job; `parseHtml` only hands it the same input. Everything it needs is in this repository; keep it that way, since the repository and the npm package are public.
 
 ## Runtime
 
@@ -19,7 +19,7 @@ This repository maintains `@citation-media/html-parser`, a library that extracts
 ## Checks
 
 - `npm run check` runs Oxlint and Oxfmt through Ultracite plus the type check; `npm run fix` applies fixes. `quality-ignore.ts` holds shared exclusions.
-- `npm test` runs the Vitest suite in the Workers runtime; `npm run build` compiles to `dist`.
+- `npm test` runs the Vitest suite in the Workers runtime and in Node; `npm run build` compiles to `dist`.
 
 ## Documentation And Releases
 

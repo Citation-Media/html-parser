@@ -45,7 +45,7 @@ export interface Hydration {
   islands: AstroIsland[];
 }
 
-export const maxIslands = 200;
+const maxIslands = 200;
 
 // How far into an inline script its framework marker may stand.
 const headLength = 1000;

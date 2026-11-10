@@ -189,6 +189,14 @@ describe("visible text", () => {
     expect(text?.length).toBe(4999);
   });
 
+  test("counts a no-break space at the end as the text it is", () => {
+    const { text } = parseHtmlSync("<p>Preis: 5&nbsp;</p><p> </p>", {
+      text: true,
+      url,
+    });
+    expect(text).toEqual({ content: "Preis: 5\u00A0", length: 9 });
+  });
+
   test("reads only the context's text", async () => {
     const { text } = await parseHtml(
       "<header>Menü</header><main><h1>Impressum</h1><p>Muster GmbH</p></main><footer>Newsletter</footer>",
@@ -212,6 +220,16 @@ describe("texts as a DOM reads them", () => {
       "a b",
     ]);
     expect(headings).toEqual([{ level: 3, text: "Play Medizin-Nobelpreis" }]);
+  });
+
+  test("leaves scripts, styles, and <noscript> markup out of link and heading texts", async () => {
+    const { headings, links } = await parseHtml(
+      `<a href="/x"><img data-src="/a.png" alt=""><noscript><img src="/a.png" alt=""></noscript>Leistungen</a>
+       <h2><style>.x { color: red }</style>Kontakt<script>track()</script></h2>`,
+      { headings: true, links: true, url }
+    );
+    expect(links?.map(({ text }) => text)).toEqual(["Leistungen"]);
+    expect(headings).toEqual([{ level: 2, text: "Kontakt" }]);
   });
 
   test("takes the document's first title, not an SVG's", async () => {

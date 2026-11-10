@@ -5,42 +5,25 @@
 
 export type LinkKind = "internal" | "external" | "special" | "anchor";
 
-const specialProtocols = [
-  "mailto:",
-  "mail:",
-  "tel:",
-  "sms:",
-  "ftp:",
-  "ftps:",
-  "ssh:",
-  "git:",
-  "svn:",
-  "news:",
-  "irc:",
-  "xmpp:",
-  "webcal:",
-  "skype:",
-  "slack:",
-  "spotify:",
-  "steam:",
-  "discord:",
-  // oxlint-disable-next-line eslint/no-script-url -- recognised so such links are not followed.
-  "javascript:",
-  "data:",
-  "blob:",
-];
+// A URL's scheme: a letter, then letters, digits, `+`, `-`, and `.`, up to the colon.
+const scheme = /^[a-z][a-z\d+.-]*:/iu;
 
+// Files a link downloads or plays rather than pages: documents, archives, media, and images.
 const resourceExtensions =
-  /\.(?:pdf|docx?|xlsx?|pptx?|zip|rar|tar|gz|mp3|mp4|avi|mov|jpe?g|png|gif|svg|webp|avif|csv)$/iu;
+  /\.(?:pdf|docx?|xlsx?|pptx?|od[tsp]|rtf|csv|epub|vcf|ics|zip|rar|7z|tar|t?gz|bz2|exe|msi|dmg|apk|mp3|m4a|wav|ogg|mp4|m4v|webm|avi|mov|mkv|wmv|jpe?g|png|gif|svg|webp|avif|bmp|tiff?|ico)$/iu;
 
 // Second-level labels under which registrable domains sit one level deeper, such as example.co.uk.
 // `or.at` and `or.jp` register organisations, as `org` does elsewhere.
 const secondLevels = /^(?:co|com|org|net|gov|gv|ac|edu|or)$/u;
 
-/** The special protocol of a URL, such as `mailto:`, or undefined for web and relative URLs. */
+/**
+ * The scheme of a URL that leads to no web page, lower-cased, such as `mailto:`, `tel:`,
+ * `whatsapp:`, or `javascript:`: every scheme but `http:` and `https:`, whether widely known or
+ * made up by one app. Undefined for web and relative URLs.
+ */
 export const specialProtocol = (url: string) => {
-  const lower = url.trim().toLowerCase();
-  return specialProtocols.find((protocol) => lower.startsWith(protocol));
+  const protocol = scheme.exec(url.trim())?.[0].toLowerCase();
+  return protocol === "http:" || protocol === "https:" ? undefined : protocol;
 };
 
 /** The registrable part of a host, good enough to tell a site's own hosts from third parties. */
@@ -55,13 +38,17 @@ export const siteOf = (host: string) => {
 /**
  * Resolves `url` against the page. Scheme and host are normalised by `URL`; paths keep their case,
  * because servers treat them as case-sensitive. `mail:` becomes `mailto:` and addresses are
- * lowercased. Special URLs other than mail stay as written.
+ * lowercased; a subject or body after them stays as written. Special URLs other than mail stay as
+ * written.
  */
 export const absoluteUrl = (url: string, base: URL): string => {
   const trimmed = url.trim();
   const protocol = specialProtocol(trimmed);
   if (protocol === "mail:" || protocol === "mailto:") {
-    return `mailto:${trimmed.slice(protocol.length).toLowerCase()}`;
+    const rest = trimmed.slice(protocol.length);
+    const query = rest.indexOf("?");
+    const end = query === -1 ? rest.length : query;
+    return `mailto:${rest.slice(0, end).toLowerCase()}${rest.slice(end)}`;
   }
   if (protocol) {
     return trimmed;
@@ -82,7 +69,13 @@ export const isResource = (url: string) => {
   }
 };
 
-/** What a link is, judged from its written `href` and its resolved URL. */
+const withoutFragment = (url: string) => url.split("#")[0] ?? url;
+
+/**
+ * What a link is, judged from its written `href`, its resolved URL, and the page's address. An
+ * `anchor` is written as a fragment, `#team` or `/#team`, and stays on the page: `/#team` anywhere
+ * but on the home page, or `#team` under a `<base href>` elsewhere, leads to another page.
+ */
 export const linkKind = (
   href: string,
   resolved: string,
@@ -92,7 +85,10 @@ export const linkKind = (
   if (specialProtocol(written)) {
     return "special";
   }
-  if (written.startsWith("#") || written.startsWith("/#")) {
+  if (
+    (written.startsWith("#") || written.startsWith("/#")) &&
+    withoutFragment(resolved) === withoutFragment(base.href)
+  ) {
     return "anchor";
   }
   try {

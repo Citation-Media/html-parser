@@ -6,7 +6,7 @@
  * markup is clear and is `unknown` otherwise.
  *
  * Calibrated against Chromium at 1440 × 900 on 17 sites, from small company sites to a news
- * portal, with 1,130 images and Astro islands; see the README for the measured precision.
+ * portal; see the README for the measured precision.
  */
 
 /**

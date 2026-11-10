@@ -36,6 +36,19 @@ describe("context selectors", () => {
     ]);
   });
 
+  test("reads escaped characters in ids and classes, as utility classes need", () => {
+    const html = `<div class="md:flex w-[calc(100%-2rem)]"><a href="/a">A</a></div>
+      <div id="1st"><a href="/b">B</a></div><div class="plain"><a href="/c">C</a></div>`;
+    const texts = (context: string) =>
+      parseHtmlSync(html, { context, links: true, url }).links?.map(
+        ({ text }) => text
+      );
+    expect(texts(".md\\:flex > a")).toEqual(["A"]);
+    expect(texts(".md\\3A flex a, .plain a")).toEqual(["A", "C"]);
+    expect(texts(".w-\\[calc\\(100\\%-2rem\\)\\] a")).toEqual(["A"]);
+    expect(texts("#\\31 st a")).toEqual(["B"]);
+  });
+
   test("tells child from descendant combinators", () => {
     expect(textsIn("section > a")).toEqual(["One", "Three", "Four"]);
     expect(textsIn("section a")).toEqual(["One", "Two", "Three", "Four"]);

@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.9.0 (2026-11-10)
+
+### Breaking changes
+
+- `@mdream/js` 1 is no longer supported: the peer range is `^2.0.3`, the version the tests run against. Under mdream 1, move to mdream 2 and pass `markdown.plugins` as an array of plugin instances from `@mdream/js/plugins`.
+- A link whose URL has any scheme but `http:` and `https:` is `special`, not only the schemes of a fixed list: `whatsapp:`, `callto:`, `sip:`, `fax:`, or an app's own scheme were `external`. `specialProtocol` returns that scheme, lower-cased.
+- A link written as `/#team` is an `anchor` only on the home page, where it stays on the page; elsewhere it leads to the home page and is `internal`.
+- `meta.description`, `meta.generator`, and `meta.image` are the first of their kind with content, as `meta.title` and `meta.properties` already were, not the last; a description in the body no longer replaces the head's. `meta.robots` joins every robots meta with commas, since search engines apply all of them. `meta.viewport` stays the last, the one a browser applies.
+- `meta.image` is an absolute URL, like every other URL of the result; `meta.properties` keeps `og:image` as written.
+- `resources.frames` and `resources.links` leave out elements whose `src` or `href` is empty, which resolved to the page's own address.
+- `isResource`, and with it a link's `resource`, knows more downloads: OpenDocument files, `.rtf`, `.epub`, `.vcf`, `.ics`, `.7z`, `.bz2`, `.tgz`, installers, and more audio, video, and image formats.
+- `engines` asks for Node.js 22 or later, the oldest maintained line, instead of 22.18, which only development needs.
+
+### Features
+
+- A response or stream is decoded by the encoding the page declares, as a browser settles it: a byte order mark, the response's `Content-Type`, a `<meta charset>` in the first 1,024 bytes, and UTF-8 otherwise. Pages served as ISO-8859-1 or Windows-1252 lost their umlauts, in the facts and the Markdown. The new `encoding` option names the encoding where the caller knows it, such as for a stream whose headers it has read.
+- The first `<base href>` in the page's head is what the URLs after it resolve against, in the facts, the Markdown, and `cleanHtml`'s link filter. Internal and external links are still told by the page's own address.
+- `readStyles` reads a colour function that holds a variable, such as Tailwind's `rgb(59 130 246 / var(--tw-bg-opacity))` or Bootstrap's `rgba(var(--bs-primary-rgb), var(--bs-bg-opacity))`. Such colours were missing from `colors`; one whose variable only sets the alpha counts as written by the declaration.
+- `context` and `select` take CSS escapes in ids and classes, such as `.md\:flex` or `.w-\[200px\]`.
+- The type `ReadCss`, what `readDeclarations` returns, is exported.
+
+### Fixes
+
+- A link's or heading's text no longer includes the markup of a `<noscript>`, the code of a script, or the CSS of a style inside it. A link around a lazy-loaded image with a `<noscript>` fallback had `<img src="…">` as its text.
+- `forms`: the label wrapping a `<select>` or `<textarea>` no longer includes the options' texts or the textarea's content. A field's `aria-label` counts before its `<label>`, as documented now; an empty one no longer hides the label.
+- `meta.canonical` is read from a `rel` in any case and among other tokens, such as `rel="Canonical"` or `rel="canonical nofollow"`.
+- A mail link's URL keeps its subject and body as written; only the addresses are lowercased.
+- `text.content` keeps a no-break space at the end of the page, which `text.length` counted.
+- `cleanHtml` with `hyphenation` removes soft hyphens written as `&#173;` or `&#xAD;` too, not only `&shy;` and the character.
+- `parseColor` reads a negative hue, such as `hsl(-120 100% 50%)`, as the colour it is.
+- `readStyles` looks each variable's root value up once. A stylesheet whose rules define and read the same variable thousands of times, as Tailwind's utilities do, took seconds: 20,000 such rules about ten seconds in Node.js, now about 150 ms.
+
+### Changes
+
+- The entity table `cleanHtml` decodes attributes with is a module of its own, so a bundle that only parses leaves it out.
+- unhead is required as `~3.4.2`: the `head` option reads how unhead numbers its tags, which a minor version may change.
+
 ## 0.8.2 (2026-11-04)
 
 - Support `@mdream/js` 2. The peer range is now `^1.7.2 || ^2.0.3`, replacing `2.0.0-beta.1`. The `markdown` option passes its options to the installed mdream, so with mdream 2 `plugins` is an array of plugin instances from `@mdream/js/plugins`.
