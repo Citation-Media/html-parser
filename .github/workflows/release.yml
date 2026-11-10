@@ -52,7 +52,7 @@ jobs:
       - name: Install
         run: npm ci
 
-      # prepublishOnly builds, checks, and tests before anything is uploaded. A version that is
+      # prepublishOnly checks and tests, and prepare builds, before anything is uploaded. A version that is
       # already on npm, such as the first one, which npm requires to be published by hand before
       # trusted publishing can be set up, is skipped, so the GitHub release still follows.
       - name: Publish to npm

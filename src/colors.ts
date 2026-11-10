@@ -124,8 +124,10 @@ const degreesOf = (value: string) => {
 
 const fromHsl = (hue: number, saturation: number, lightness: number) => {
   const amount = saturation * Math.min(lightness, 1 - lightness);
+  // A hue may be negative or beyond a full turn, as in `hsl(-120 100% 50%)`.
+  const turned = ((hue % 360) + 360) % 360;
   const channel = (offset: number) => {
-    const k = (offset + hue / 30) % 12;
+    const k = (offset + turned / 30) % 12;
     return 255 * (lightness - amount * Math.max(-1, Math.min(k - 3, 9 - k, 1)));
   };
   return { b: channel(4), g: channel(8), r: channel(0) };

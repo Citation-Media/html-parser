@@ -16,6 +16,7 @@ const { parseHtmlSync } = await import(
   pathToFileURL(path.resolve(dist, "index.js")).href
 );
 const options = {
+  forms: true,
   head: true,
   headings: true,
   hidden: true,

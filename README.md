@@ -1,6 +1,6 @@
 # @citation-media/html-parser
 
-Extracts links, images, resources, metadata, headings, class counts, JSON-LD, styles, hydration, visible text, and inline code from HTML in one pass over the page, and writes it as Markdown with [mdream](https://github.com/harlan-zw/mdream) from the same input when asked. It reads the page with mdream's tokenizer, which never builds a DOM and runs in plain JavaScript in Cloudflare Workers, Node.js, Bun, Deno, and browsers: a streamed page of several megabytes costs about as much memory as a small one.
+Extracts links, images, resources, metadata, headings, class counts, JSON-LD, styles, hydration, visible text, inline code, fragment targets, forms, and elements by selector from HTML in one pass over the page, and writes it as Markdown with [mdream](https://github.com/harlan-zw/mdream) from the same input when asked. It reads the page with mdream's tokenizer, which never builds a DOM and runs in plain JavaScript in Cloudflare Workers, Node.js, Bun, Deno, and browsers: a streamed page of several megabytes costs about as much memory as a small one.
 
 ## Install
 
@@ -8,11 +8,11 @@ Extracts links, images, resources, metadata, headings, class counts, JSON-LD, st
 npm install @citation-media/html-parser @mdream/js
 ```
 
-`@mdream/js` is a peer dependency, `^1.7.2` or `^2.0.3`. [unhead](https://unhead.unjs.io/) comes along for the `head` option. `cleanHtml` builds on [HTMLRewriter](https://developers.cloudflare.com/workers/runtime-apis/html-rewriter/) and runs only where it is a global: Cloudflare Workers, `wrangler dev`, and `@cloudflare/vitest-pool-workers`.
+`@mdream/js` is a peer dependency, `^2.0.3`. [unhead](https://unhead.unjs.io/) comes along for the `head` option. `cleanHtml` builds on [HTMLRewriter](https://developers.cloudflare.com/workers/runtime-apis/html-rewriter/) and runs only where it is a global: Cloudflare Workers, `wrangler dev`, and `@cloudflare/vitest-pool-workers`.
 
 ## Parse A Page
 
-`parseHtml` returns only what you ask for. The input is the page as text, a `Response` such as the result of `fetch`, or a `ReadableStream` of its body; a response or stream is read chunk by chunk. `parseHtmlSync` does the same for text without a promise.
+`parseHtml` returns only what you ask for. The input is the page as text, a `Response` such as the result of `fetch`, or a `ReadableStream` of its body; a response or stream is read chunk by chunk and decoded as the page declares, see [Encoding](#encoding). `parseHtmlSync` does the same for text without a promise.
 
 ```ts
 import { parseHtml } from "@citation-media/html-parser";
@@ -28,14 +28,15 @@ const { links, images, meta } = await parseHtml(response, {
 
 | Option | What it collects |
 | --- | --- |
-| `url` | Required. Resolves relative URLs and tells internal links from external ones. |
+| `url` | Required. Resolves relative URLs and tells internal links from external ones. The first `<base href>` in the page's head takes its place for the URLs after it, as in a browser; internal and external are still told by the page's own address. |
+| `encoding` | The encoding of a response's or stream's bytes, such as `windows-1252`, where you know it; otherwise the page decides, see [Encoding](#encoding). |
 | `links` | `true` or a filter: `kinds` (`internal`, `external`, `special`, `anchor`) and `resources: false` to drop downloads such as PDFs. |
 | `images` | Images with `alt` (`null` when missing, `""` when decorative), `width`, `height`, `loading`, whether they have a `srcset`, and its URLs as `sources`, absolute, without data URLs, at most 20. |
 | `resources` | Scripts with their `src`, `type`, attribute names, and whether they stand in the `<head>`, frame URLs, `<link>` elements with their `rel` and, where they have one, `type`, such as `text/markdown` for a Markdown version of the page, and `media`, the URLs of audio, video, their sources and tracks, a `<picture>`'s sources, embeds, and objects, each once. A classic script in the head without `async`, `defer`, or `nomodule` blocks the first render. |
-| `meta` | Title, description, language, canonical URL, robots, viewport, generator, Open Graph image, and `properties`, every `<meta property>` such as `og:title` or `article:published_time` by its lower-cased property, the first where one repeats, at most 50. The title is the document's first `<title>`; an SVG's `<title>` names the graphic and does not count. |
+| `meta` | Title, description, language, canonical URL, robots, viewport, generator, Open Graph image as an absolute URL, and `properties`, every `<meta property>` such as `og:title` or `article:published_time` by its lower-cased property and as written, the first where one repeats, at most 50. Where a page repeats a field, the first with content counts, for the description, generator, and image as for the title; `robots` joins every robots meta with commas, since search engines apply all of them, and `viewport` is the last, the one a browser applies. The title is the document's first `<title>`; an SVG's `<title>` names the graphic and does not count. |
 | `headings` | The first 200 headings with their level and text, and `headingCounts` per level without a limit. |
 | `classPrefixes` | Counts of elements whose class starts with a prefix, such as `["elementor-", "brxe-", "wp-block-"]`. |
-| `context` | A CSS selector such as `main` or `article`: only content inside matching elements counts. When nothing matches, the whole page counts. It takes types, `#id`, `.class`, attribute selectors with `=`, `~=`, `\|=`, `^=`, `$=`, `*=` and an `i` flag, `:first-child`, `:nth-child()`, `:first-of-type`, `:nth-of-type()`, `:not()`, and the descendant and `>` combinators, as HTMLRewriter does; selectors that need what comes after an element, such as `:last-child` or `+`, throw a `SyntaxError`. |
+| `context` | A CSS selector such as `main` or `article`: only content inside matching elements counts. When nothing matches, the whole page counts. It takes types, `#id`, `.class`, attribute selectors with `=`, `~=`, `\|=`, `^=`, `$=`, `*=` and an `i` flag, `:first-child`, `:nth-child()`, `:first-of-type`, `:nth-of-type()`, `:not()`, and the descendant and `>` combinators, as HTMLRewriter does, with CSS escapes in ids and classes, such as `.md\:flex`; selectors that need what comes after an element, such as `:last-child` or `+`, throw a `SyntaxError`. |
 | `structuredData` | The page's JSON-LD as `items`, the nodes of every `<script type="application/ld+json">` block with lists and `@graph` expanded, and `invalid`, the blocks that are not valid JSON with their position and error. Read wherever the blocks are, regardless of `context`. |
 | `styles` | The page's own CSS for `readStyles`: `blocks`, each `<style>` block's text with its `id`; `attributes`, each `style` attribute with its element, such as `div#hero.banner`; and `stylesheets`, the absolute URLs of `rel="stylesheet"` links and stylesheets preloaded with `as="style"`. Read regardless of `context`. |
 | `hydration` | The framework that hydrates the page in the browser, or `null`, see [Hydration](#hydration). Read regardless of `context`. |
@@ -44,14 +45,18 @@ const { links, images, meta } = await parseHtml(response, {
 | `text` | The text a visitor reads, as `length` and `content`: without the head, scripts, styles, templates, `<noscript>`, and SVG, with whitespace collapsed and block elements separated by a space. `{ maxLength }` cuts `content`, 100,000 characters by default; `length` counts the whole text. Little text in the body as served marks a page that scripts render. |
 | `inlineCode` | What a Content Security Policy has to allow: `scripts`, the text of every inline script a browser runs, exactly as written for its hash, without data blocks such as JSON-LD or templates; `eventHandlers`, attributes such as `onclick`; `javascriptUrls` in `href`, `src`, `action`, and `formaction`; `styleElements` and `styleAttributes`; and `formActions`, the absolute URLs forms send to. Read regardless of `context`. |
 | `ids` | The targets a fragment link such as `#team` can point to: every element's `id` and each `<a>`'s `name`, in page order, each once, at most 5,000. Read regardless of `context`. Compare them with the `anchor` links of the same page, or the fragments of internal links to it, to find links that lead nowhere. |
-| `markdown` | The page as Markdown, written by mdream from the same input: `true` for mdream's defaults with the full page URL as its base, or mdream's options, such as `{ plugins: [isolateMainPlugin(), filterPlugin({ exclude: ["nav"] })] }` with mdream 2, whose plugins come from `@mdream/js/plugins`. An explicit `origin` overrides the base. mdream's filters shape only the Markdown, never what the other options collect. |
+| `markdown` | The page as Markdown, written by mdream from the same input: `true` for mdream's defaults with the full page URL as its base, or mdream's options, such as `{ plugins: [isolateMainPlugin(), filterPlugin({ exclude: ["nav"] })] }`, whose plugins come from `@mdream/js/plugins`. An explicit `origin` overrides the base. mdream's filters shape only the Markdown, never what the other options collect. |
 | `head` | The `<head>` as [unhead](https://unhead.unjs.io/) validates it, see [Head](#head). Read regardless of `context`. |
 | `select` | Elements by CSS selector, as `selected` under the same keys: `{ addresses: "address", times: "time[datetime]" }` gives each match's `tag`, `attributes`, and `text` (as `textContent`, without scripts and styles, cut at 2,000 characters), at most 200 per key, in page order; with `hidden`, whether it is in hidden content. The selectors are those `context` takes. Read regardless of `context`. |
-| `forms` | The page's forms: `action` (absolute; the page's own address where the form names none), `method` (`get`, `post`, or `dialog`), `id` and `name`, `fields` with their `tag`, `type` (lower-cased, `text` by default), `name`, `id`, `autocomplete`, `placeholder`, `required`, and `label` (the `<label>` by `for` or wrapping it, else `aria-label`), and `buttons`, the texts of its buttons. Fields outside a `<form>` are not read; with `hidden`, a form says whether it is in hidden content. |
+| `forms` | The page's forms: `action` (absolute; the page's own address where the form names none), `method` (`get`, `post`, or `dialog`), `id` and `name`, `fields` with their `tag`, `type` (lower-cased, `text` by default), `name`, `id`, `autocomplete`, `placeholder`, `required`, and `label` (its `aria-label`, else the text of the `<label>` by `for` or wrapping it, without a select's options: the order in which a browser names the field for assistive technology), and `buttons`, the texts of its buttons. Fields outside a `<form>` are not read; with `hidden`, a form says whether it is in hidden content. |
 
 `readStructuredData(blocks)` turns the text of JSON-LD blocks into the same result, for blocks you already have. It checks only that each block is JSON; whether the nodes carry the properties a search engine expects is up to the caller.
 
-Links are deduplicated by URL, counted, and sorted by count. Each carries its `text`, `kind`, `resource`, `count`, and, where present, `rel`, `target`, and `aria-label`. URLs are absolute; paths keep their case. Texts read as a DOM's `textContent` does, with entities decoded once and whitespace collapsed.
+Links are deduplicated by URL, counted, and sorted by count. Each carries its `text`, `kind`, `resource`, `count`, and, where present, `rel`, `target`, and `aria-label`. URLs are absolute; paths keep their case. A link is `special` when its URL has any scheme but `http:` and `https:`, from `mailto:` and `tel:` to `whatsapp:` or an app's own; `specialProtocol(url)` returns that scheme. It is an `anchor` when it is written as a fragment, `#team` or `/#team`, and stays on the page: `/#team` anywhere but on the home page leads to another page and is `internal`. `resource` marks documents, archives, media, and images by their extension, such as `.pdf`, `.zip`, `.vcf`, or `.mp4`. Texts read as a DOM's `textContent` does, with entities decoded once and whitespace collapsed.
+
+## Encoding
+
+Text is taken as it is. The bytes of a response or stream are decoded once, for the facts and the Markdown alike, by the encoding the page declares, in the order HTML gives: a byte order mark, then the `encoding` option or else the charset of the response's `Content-Type`, then a `<meta charset>` or `<meta http-equiv="Content-Type">` in the first 1,024 bytes, and UTF-8 where nothing says otherwise. So a page served as ISO-8859-1 or Windows-1252 keeps its umlauts. A stream has no headers; pass `encoding` when you have read them. The labels are those `TextDecoder` knows; an unknown one counts as not given.
 
 ## Hidden Content
 
@@ -59,7 +64,7 @@ With `hidden`, each link, image, and heading says whether it stands in content t
 
 A rule in place of `true` decides for each element, given what the markup says: `(tag, attributes, byMarkup) => byMarkup && !attributes.class?.includes("popup")` keeps popups, which may hold an imprint, and `(tag, attributes, byMarkup) => byMarkup || /\bsr-only\b/.test(attributes.class ?? "")` hides screen-reader-only text as well. With `positions`, the same decision tells which containers hide their content, besides the classes the estimate reads on its own.
 
-A link or image that the page repeats is hidden only when every occurrence is: a logo in a closed menu and in the header is in plain sight. Headings are listed in page order, hidden ones included, so a heading outline can skip or show them. `<noscript>` content is text to the tokenizer and is never collected.
+A link or image that the page repeats is hidden only when every occurrence is: a logo in a closed menu and in the header is in plain sight. Headings are listed in page order, hidden ones included, so a heading outline can skip or show them. `<noscript>` content is text to the tokenizer and is never collected, nor does it, a script, or a style count towards the text of a link or heading around it.
 
 ## One Pass For Several Needs
 
@@ -67,6 +72,7 @@ Ask for everything a page is needed for at once, so it is read once:
 
 ```ts
 import { parseHtml } from "@citation-media/html-parser";
+import { filterPlugin } from "@mdream/js/plugins";
 
 const page = await parseHtml(await fetch(url), {
   url,
@@ -74,7 +80,7 @@ const page = await parseHtml(await fetch(url), {
   meta: true,
   structuredData: true,
   text: true,
-  markdown: { plugins: { filter: { exclude: ["script", "style"] } } },
+  markdown: { plugins: [filterPlugin({ exclude: ["script", "style"] })] },
 });
 ```
 
@@ -177,7 +183,7 @@ The reader is not a full CSS parser: it follows comments, strings, at-rules such
 
 ## Clean A Page
 
-`cleanHtml` returns HTML without what you remove. EXIF and XMP blocks and binary-looking text are always removed.
+`cleanHtml` returns HTML without what you remove. EXIF and XMP blocks, with the namespaced elements that carry them, such as `<x:xmpmeta>` and `<rdf:RDF>`, and binary-looking text are always removed.
 
 ```ts
 import { cleanHtml } from "@citation-media/html-parser";
@@ -196,7 +202,7 @@ const html = await cleanHtml(page, {
 });
 ```
 
-`remove` accepts `scripts`, `styles` (with style attributes and inline SVG), `comments`, `cookieConsent`, `ariaHidden`, `images`, `classes`, `ids`, `meta`, `linkTags`, and `hyphenation`. Links that `links` does not keep become their text.
+`remove` accepts `scripts`, `styles` (with style attributes and inline SVG), `comments`, `cookieConsent`, `ariaHidden`, `images`, `classes`, `ids`, `meta`, `linkTags`, and `hyphenation`. Links that `links` does not keep become their text; their kind is told as `parseHtml` tells it, a `<base href>` included.
 
 `cookieConsent` removes the dialogs, banners, and content blockers of widespread consent tools, Borlabs Cookie, Cookiebot, Usercentrics, Complianz, OneTrust, Real Cookie Banner, and others, by the selectors `consentSelectors` lists; the list is exported for callers that leave the consent tool out of what they read or measure, in a browser too.
 
@@ -206,7 +212,7 @@ const html = await cleanHtml(page, {
 
 The Markdown itself is mdream's: the `markdown` option hands it the page with your options. To convert with mdream's WebAssembly engine, the `mdream` package, call it on the same text yourself.
 
-Relative Markdown links and images use the full page `url` as their base. For example, with `url: "https://example.com/guides/start/"`, `next/` resolves to `https://example.com/guides/start/next/`. Set `markdown.origin` to override that base.
+Relative Markdown links and images use the full page `url` as their base, or the `<base href>` of the page's head where it has one. For example, with `url: "https://example.com/guides/start/"`, `next/` resolves to `https://example.com/guides/start/next/`. Set `markdown.origin` to override that base. For a response or stream, the conversion starts once the head has been read, so the base is known.
 
 ## Limits
 
@@ -214,7 +220,7 @@ Elements are opened and closed as an HTML parser does: `<li>` and `<p>` close wh
 
 ## Develop
 
-Development needs Node.js 22.18 or later, which loads the TypeScript configuration of Oxlint and Oxfmt; `.nvmrc` pins Node.js 24.
+The package runs on Node.js 22 or later. Development needs Node.js 22.18 or later, which loads the TypeScript configuration of Oxlint and Oxfmt; `.nvmrc` pins Node.js 24.
 
 ```bash
 npm ci

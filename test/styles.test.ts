@@ -24,6 +24,8 @@ describe("colours", () => {
     expect(parseColor("rgba(0,0,0,.2)")?.alpha).toBeCloseTo(0.2);
     expect(hexOf("hsl(210 90% 25%)")).toBe("#064079");
     expect(hexOf("hsla(210, 90%, 25%, 1)")).toBe("#064079");
+    expect(hexOf("hsl(-120 100% 50%)")).toBe("#0000ff");
+    expect(hexOf("hsl(-0.5turn 100% 50%)")).toBe("#00ffff");
     expect(hexOf("rebeccapurple")).toBe("#663399");
     // Tailwind 4's teal-500.
     expect(hexOf("oklch(70.4% 0.14 182.503)")).toBe("#00bba7");
@@ -163,6 +165,34 @@ describe("style map", () => {
     ]);
   });
 
+  test("reads a colour function that holds a variable, by where the variable stands", () => {
+    const { colors } = readStyles([
+      {
+        css: `:root { --bs-primary-rgb: 13, 110, 253; --bs-bg-opacity: 1; --tw-bg-opacity: 1 }
+              .bg-blue-500 { --tw-bg-opacity: 1; background-color: rgb(59 130 246 / var(--tw-bg-opacity)) }
+              .text-muted { color: rgba(0, 0, 0, var(--missing, 0.5)) }
+              .bg-primary { background-color: rgba(var(--bs-primary-rgb), var(--bs-bg-opacity)) }
+              .mixed { border: 1px solid rgb(1 2 3 / var(--tw-bg-opacity)), #fff }
+              .unknown { color: rgb(1 2 3 / var(--missing)) }`,
+        origin: "utilities.css",
+      },
+    ]);
+    expect(
+      colors.map(({ alpha, color, selector, variable }) => [
+        selector,
+        color,
+        alpha,
+        variable,
+      ])
+    ).toEqual([
+      [".bg-blue-500", "#3b82f6", 1, undefined],
+      [".text-muted", "#000000", 0.5, undefined],
+      [".bg-primary", "#0d6efd", 1, "--bs-primary-rgb"],
+      [".mixed", "#010203", 1, undefined],
+      [".mixed", "#ffffff", 1, undefined],
+    ]);
+  });
+
   test("lists font families with their stacks and the faces the CSS loads", () => {
     expect(
       map.fonts.map(({ family, selector, variable }) => [
@@ -184,6 +214,23 @@ describe("style map", () => {
         src: "url(inter.woff2)",
       },
     ]);
+  });
+});
+
+describe("large stylesheets", () => {
+  test("reads a variable that thousands of rules define and read without slowing down", () => {
+    const rules = Array.from(
+      { length: 20_000 },
+      (_, index) =>
+        `.bg-${index}{--tw-bg-opacity:1;background-color:rgb(1 2 3 / var(--tw-bg-opacity))}`
+    );
+    const start = performance.now();
+    const map = readStyles([{ css: rules.join(""), origin: "tailwind.css" }]);
+    expect(map.variables).toEqual([
+      expect.objectContaining({ name: "--tw-bg-opacity", uses: 20_000 }),
+    ]);
+    // Looking the root value up for every use took about ten seconds here.
+    expect(performance.now() - start).toBeLessThan(5000);
   });
 });
 

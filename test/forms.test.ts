@@ -79,6 +79,34 @@ test("reads forms with their fields, labels, and buttons", async () => {
   ]);
 });
 
+test("keeps a select's options and a textarea's content out of the label around them", async () => {
+  const { forms } = await parseHtml(
+    `<form><label>Land <select name="country"><option>Deutschland</option><option>Österreich</option></select> wählen</label>
+    <label>Nachricht <textarea name="message">Vorgabe</textarea></label>
+    <label>E-Mail <input name="email"></label></form>`,
+    { forms: true, url }
+  );
+  expect(forms?.[0]?.fields.map(({ label, name }) => [name, label])).toEqual([
+    ["country", "Land wählen"],
+    ["message", "Nachricht"],
+    ["email", "E-Mail"],
+  ]);
+});
+
+test("names a field by its aria-label before its label, as a browser does", async () => {
+  const { forms } = await parseHtml(
+    `<form><label for="a">Sichtbar</label><input id="a" name="a" aria-label="Vorgelesen">
+    <label>Umschlossen <input name="b" aria-label="Auch vorgelesen"></label>
+    <label for="c">Nur sichtbar</label><input id="c" name="c" aria-label=" "></form>`,
+    { forms: true, url }
+  );
+  expect(forms?.[0]?.fields.map(({ label, name }) => [name, label])).toEqual([
+    ["a", "Vorgelesen"],
+    ["b", "Auch vorgelesen"],
+    ["c", "Nur sichtbar"],
+  ]);
+});
+
 test("respects the context and marks hidden forms", async () => {
   const { forms } = await parseHtml(
     `<header><form class="search"><input name="s"></form></header>

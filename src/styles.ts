@@ -1,4 +1,5 @@
 import { colorsIn, parseColor, toHex } from "./colors.ts";
+import type { Rgb } from "./colors.ts";
 
 /**
  * A map of what a page's CSS defines and uses, without a browser: custom properties with their
@@ -278,15 +279,23 @@ const resolverOf = (declarations: readonly StyleDeclaration[]) => {
       definitions.set(declaration.property, list);
     }
   }
+  // Utility CSS defines one variable in thousands of rules and reads it in as many, so each
+  // variable's root value is looked up once.
+  const roots = new Map<string, string | undefined>();
   const rootValue = (name: string) => {
+    if (roots.has(name)) {
+      return roots.get(name);
+    }
     const list = definitions.get(name) ?? [];
     const onRoot = list.filter(({ selector }) => rootSelector.test(selector));
-    return (
+    const { value } =
       onRoot.find(unconditional) ??
       onRoot[0] ??
       list.find(unconditional) ??
-      list[0]
-    )?.value;
+      list[0] ??
+      {};
+    roots.set(name, value);
+    return value;
   };
   const resolve = (
     value: string,
@@ -313,31 +322,60 @@ const resolverOf = (declarations: readonly StyleDeclaration[]) => {
 
 type Resolve = (value: string) => string;
 
+// A colour function, whose arguments may hold `var()` with a fallback of its own.
+const colorFunction =
+  /\b(?:rgba?|hsla?|oklch|oklab)\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)/giu;
+
+/**
+ * The variable a colour function takes its channels from, as in Bootstrap's
+ * `rgba(var(--bs-primary-rgb), var(--bs-bg-opacity))`. A variable that only sets the alpha, as in
+ * Tailwind's `rgb(59 130 246 / var(--tw-bg-opacity))`, leaves the colour one the function writes.
+ */
+const channelVariable = (call: string) => {
+  const first = call.indexOf("var(");
+  const before = call.slice(call.indexOf("(") + 1, first);
+  // The alpha comes last: after a slash, or as the fourth of comma-separated arguments.
+  if (before.includes("/") || before.split(",").length > 3) {
+    return;
+  }
+  return /^var\(\s*(?<name>--[\w-]+)/u.exec(call.slice(first))?.groups?.name;
+};
+
 /** The colours a declaration paints with: those it writes itself, then those it reads. */
 const colorUses = (
   { property, value, selector, origin }: StyleDeclaration,
   resolve: Resolve
 ): ColorUse[] => {
+  const use = (color: Rgb, variable?: string): ColorUse => ({
+    alpha: color.alpha,
+    color: toHex(color),
+    origin,
+    property,
+    selector,
+    ...(variable && { variable }),
+  });
+  const written: ColorUse[] = [];
+  const read: ColorUse[] = [];
+  // A colour function with a variable inside is read whole, once its variables are resolved.
+  const plain = value.replaceAll(colorFunction, (call) => {
+    if (!call.includes("var(")) {
+      return call;
+    }
+    const variable = channelVariable(call);
+    for (const color of colorsIn(resolve(call))) {
+      (variable ? read : written).push(use(color, variable));
+    }
+    return " ";
+  });
   // A colour outside var() and its fallback is one the declaration writes itself.
-  const written = colorsIn(value.replaceAll(variableCall, " ")).map(
-    (color) => ({
-      alpha: color.alpha,
-      color: toHex(color),
-      origin,
-      property,
-      selector,
-    })
-  );
-  const read = [...value.matchAll(variableCall)].flatMap((match) =>
-    colorsIn(resolve(match[0])).map((color) => ({
-      alpha: color.alpha,
-      color: toHex(color),
-      origin,
-      property,
-      selector,
-      variable: match.groups?.name ?? "",
-    }))
-  );
+  for (const color of colorsIn(plain.replaceAll(variableCall, " "))) {
+    written.push(use(color));
+  }
+  for (const match of plain.matchAll(variableCall)) {
+    for (const color of colorsIn(resolve(match[0]))) {
+      read.push(use(color, match.groups?.name ?? ""));
+    }
+  }
   return [...written, ...read];
 };
 

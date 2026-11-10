@@ -1,16 +1,18 @@
+import { readAttribute } from "./entities.ts";
 import { hiddenFromReaders } from "./layout.ts";
 import type { LinkFilter } from "./parse.ts";
-import { looksBinary, readAttribute } from "./text.ts";
+import { looksBinary } from "./text.ts";
 import { absoluteUrl, isResource, linkKind } from "./urls.ts";
 
 /**
  * Cleans a page in one streaming pass, for callers that need HTML rather than extracted facts,
- * such as a scraper that stores the page or hands it to a converter. EXIF and XMP blobs and
- * binary-looking text are always removed; everything else is removed only when asked.
+ * such as a scraper that stores the page or hands it to a converter. EXIF and XMP blobs, the
+ * namespaced elements that carry them, such as `<x:xmpmeta>` and `<rdf:RDF>`, and binary-looking
+ * text are always removed; everything else is removed only when asked.
  */
 
 export interface CleanOptions {
-  /** The page's address, needed to filter links by kind. */
+  /** The page's address, needed to filter links by kind; a `<base href>` is honoured. */
   url: string | URL;
   remove?: {
     scripts?: boolean;
@@ -85,6 +87,9 @@ export const consentSelectors: readonly string[] = [
   "div[class*='consent-wrapper']",
 ];
 
+// A soft hyphen as the source writes it: the character, `&shy;`, or its numeric entity.
+const softHyphens = /­|&shy;|&#0*173;|&#x0*ad;/giu;
+
 const remove = {
   element(element: Element) {
     element.remove();
@@ -100,7 +105,7 @@ export const cleanHtml = (
   if (!(input instanceof Response) && input.trim() === "") {
     return Promise.resolve("");
   }
-  const base = new URL(options.url);
+  const page = new URL(options.url);
   const removed = options.remove ?? {};
   let rewriter = new HTMLRewriter();
 
@@ -174,8 +179,11 @@ export const cleanHtml = (
       text(chunk) {
         if (looksBinary(chunk.text)) {
           chunk.remove();
-        } else if (removed.hyphenation && /&shy;|­/u.test(chunk.text)) {
-          chunk.replace(chunk.text.replaceAll(/&shy;|­/gu, ""), { html: true });
+        } else if (removed.hyphenation) {
+          const text = chunk.text.replaceAll(softHyphens, "");
+          if (text !== chunk.text) {
+            chunk.replace(text, { html: true });
+          }
         }
       },
     });
@@ -224,14 +232,25 @@ export const cleanHtml = (
 
   const { links } = options;
   if (links) {
+    // What relative links resolve against: the page's address, or its first `<base href>`.
+    let base: URL | undefined;
+    rewriter = rewriter.on("base[href]", {
+      element(element) {
+        try {
+          base ??= new URL(readAttribute(element, "href") ?? "", page);
+        } catch {
+          // A base that is no URL changes nothing.
+        }
+      },
+    });
     rewriter = rewriter.on("a", {
       element(element) {
         const href = readAttribute(element, "href");
         if (!href) {
           return;
         }
-        const url = absoluteUrl(href, base);
-        const kind = linkKind(href, url, base);
+        const url = absoluteUrl(href, base ?? page);
+        const kind = linkKind(href, url, page);
         const kept =
           (!links.kinds || links.kinds.includes(kind)) &&
           (links.resources !== false || !isResource(url));

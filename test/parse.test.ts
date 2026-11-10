@@ -106,6 +106,16 @@ describe("links", () => {
     );
   });
 
+  test("lowercases a mail link's addresses, not its subject", async () => {
+    const { links } = await parseHtml(
+      '<a href="mailto:Team@Example.com?subject=Anfrage Website&body=Hallo?">Mail</a>',
+      { links: true, url }
+    );
+    expect(links?.[0]?.url).toBe(
+      "mailto:team@example.com?subject=Anfrage Website&body=Hallo?"
+    );
+  });
+
   test("keeps the case of paths, which servers treat as case-sensitive", async () => {
     const { links } = await parseHtml(
       '<a href="/Downloads/Flyer.pdf">Flyer</a>',
@@ -241,6 +251,19 @@ describe("resources and meta", () => {
       language: "de",
       title: "Beispiel & Co.",
     });
+  });
+
+  test("reads the canonical URL from a rel in any case or among other tokens", async () => {
+    const upper = await parseHtml('<link rel="Canonical" href="/a">', {
+      meta: true,
+      url,
+    });
+    expect(upper.meta?.canonical).toBe("https://example.com/a");
+    const tokens = await parseHtml(
+      '<link rel="canonical nofollow" href="/b"><link rel="alternate" href="/c">',
+      { meta: true, url }
+    );
+    expect(tokens.meta?.canonical).toBe("https://example.com/b");
   });
 
   test("counts elements by class prefix, such as page builders", async () => {
